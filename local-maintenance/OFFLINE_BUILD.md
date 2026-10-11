@@ -50,6 +50,6 @@ uv缓存路径用 `uv cache dir` 查询，Python使用项目 `python-runtime/` �
 
 生产前端指纹忽略测试与mock文件；从备份检出后不要求存在本机测试目录。需要生成新配置/API/图像模板时，在用户选定的上游候选目录保留相应生成器，验证通过后只把运行源文件和对应生成产物带回本机版。
 
-本次最大模型小于100MiB，因此可在普通Git提交中备份。完整Python运行环境和缓存较大，另存本机/离线介质，未来若需要上传应另行准备无私人数据的release包。[GitHub文件限制说明](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)
+本次最大模型小于100MiB，因此可在普通Git提交中备份。源码 Git 不包含完整 Python 运行环境和缓存；另行准备的 Windows Release 离线包带已安装运行依赖，排除私人数据和测试脚本，使用方式见 RELEASE_GUIDE.md。包内没有完整 uv/npm 下载缓存，不保证离线重建缺失环境。[GitHub文件限制说明](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)
 
 从GitHubclone时：先读本维护清单，再准备Python和依赖，恢复自己的私人config，运行逐项本地设置恢复，确认验收标签存在并匹配HEAD，最后启动。代码可以从GitHub恢复，账号状态不能从这份源码仓库恢复。

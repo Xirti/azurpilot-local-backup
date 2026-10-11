@@ -13,7 +13,7 @@
     "local-repairs/webui_launcher.py": "3c1a6990e06c3bf219439b8a7a95b1242e3a5bf50f6e773d30ee08af9888219f",
     "local-maintenance/offline-runtime/sitecustomize.py": "f4c1f0e5cd78f68065cd52ff51d162e3e5f40ec125b8bd6700564058d1ff2972",
     "local-maintenance/maintain.py": "2daea7a9b393bdbbe97d377fcfb4d1d041a0bbf41e2239b482629813918ad9ac",
-    "local-maintenance/machine-profile.json": "d4c0e1fdb1db1fab08d02a0e06894267f257c8a96e2427404decec7e371c3198",
+    "local-maintenance/machine-profile.json": "4d2b405449c857bc47da765b3cbcc860b9ac96d120b5c967b82db6e7536b933c",
     ".gitattributes": "f597a42eaa51b1c3e334b523c996ad0f1ae3f128d81a15b46780449c24d32560",
     "local-repairs/webui_stop.py": "696ba7c7c80f929ef62bd3e0c4d203ec9da68d035409be990d4f0afc1709e228",
     "start-webui-no-timeout.ps1": "8acaf03526d9c581a7fba36ffade22fb0cd78418ce9d60d4a585854ef2139bd7",
@@ -128,9 +128,12 @@
     "frontend/dist/assets/ui-zEWJqOMn.js": "841171f515a48f50a02d13247087210b05403cea5e1105824cfbb5a9f9a9c3aa",
     "frontend/dist/assets/View-ClZ1hEQm.js": "920fc2ea9eed111cc0a293b772c8b145677788797f4d133089f3e5700aa4142f",
     "frontend/dist/assets/Wallpaper-xYKhRsPD.js": "fc64e2b29976917a76bca14e325942fa51d3f98704a56ee14e910a254dae3650",
-    "frontend/dist/assets/YamlEditor-BKh5-V5x.js": "b321aea5af10b5d40595c1174582718e2b3d56d4f60566e22ab9475c8c5b468f"
+    "frontend/dist/assets/YamlEditor-BKh5-V5x.js": "b321aea5af10b5d40595c1174582718e2b3d56d4f60566e22ab9475c8c5b468f",
+    "local-maintenance/initialize_release.py": "4847a3c194182a2f9448c58265efe16ce5ac6a74960bb04097bbd259ef615854",
+    "初始化离线包.cmd": "e83ddd2748259d10bc442fa07762db4bb3060d05423e4fd7e30accd9ef71e294",
+    "initialize-offline-release.ps1": "2cb4a70649c904a4b2feaf3742987bf646b5de1c53066631e1db5250195c4fd4"
   },
   "description": "本机离线 WebUI、45秒计时修复与正常关闭；使用验收后的标签固定版本",
   "local_only": true,
-  "revision_ref": "refs/tags/local-2026-10-10"
+  "revision_ref": "refs/tags/local-2026-10-10-r2"
 }

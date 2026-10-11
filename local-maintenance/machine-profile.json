@@ -26,7 +26,7 @@
     "Run": null,
     "Repository": "https://github.com/Xirti/azurpilot-local-backup",
     "Branch": "main",
-    "GitExecutable": "C:/Program Files/Git/cmd/git.exe"
+    "GitExecutable": "./.venv/Scripts/git/cmd/git.exe"
   },
   "settings": [
     {
@@ -125,10 +125,28 @@
     "OpsiHazard1Leveling",
     "OpsiScheduling"
   ],
+  "preserve_user_settings": [
+    {
+      "path": "Alas.Optimization.CloseEmulatorDuringLongWait",
+      "original_value": true,
+      "label": "长时间等待时关闭模拟器"
+    },
+    {
+      "path": "Alas.Optimization.WhenTaskQueueEmpty",
+      "original_value": "goto_main",
+      "label": "当任务队列清空后"
+    },
+    {
+      "path": "Alas.Optimization.WhenSchedulerStopped",
+      "original_value": "stay_there",
+      "label": "停止调度器后"
+    }
+  ],
   "notes": [
     "真实配置和密钥不进入 GitHub。",
     "只逐项修改存在的键；不覆盖新版的完整配置。",
-    "本地版首次不自动开始任务；恢复开荒前人工复核智能调度。"
+    "本地版首次不自动开始任务；恢复开荒前人工复核智能调度。",
+    "用户要求三个等待/队列/停止选项保持原状；preserve_user_settings 只记录，不由 apply 恢复工具强制写回。"
   ],
   "observed_before_local_copy": {
     "Optimization": {
