@@ -268,3 +268,13 @@ test_*.py
 conftest.py
 /frontend/playwright*.config.*
 /frontend/vitest.config.*
+/.devin/
+/.cursorignore
+/.dockerignore
+/Dockerfile
+/docker-compose.yml
+/README/
+**/tests/
+**/test/
+**/mock/
+**/e2e/

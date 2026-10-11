@@ -110,6 +110,7 @@ Node.js >= 22.12（推荐 24），首次准备用 `npm ci --prefix frontend`。
 - [API 服务](api.md) —— 协议、认证与路由，前端所有业务通信的对端
 - [配置系统](../config.md) —— args.json、menu.json 与翻译文件的来源
 - [外部桥接与开发工具](../infra/submodule-tools.md) —— dev_tools.export_api_schema 所在的开发工具层
-# 本机备份范围补充
+
+## 本机备份范围补充
 
 本机分支的生产指纹忽略测试、mock、e2e 和测试夹具；这些文件只留在本机，不进入备份提交。运行源码、锁文件和 public 资源仍参与指纹，任何生产源文件变化仍要求人工构建。已有 dist 随备份提交，本地模式缺产物或指纹失配时停止，不自动安装依赖。恢复/更新入口见 `local-maintenance/AI_LOCAL_MAINTENANCE.md`。

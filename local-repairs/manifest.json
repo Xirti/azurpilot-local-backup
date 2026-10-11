@@ -132,5 +132,5 @@
   },
   "description": "本机离线 WebUI、45秒计时修复与正常关闭；使用验收后的标签固定版本",
   "local_only": true,
-  "revision_ref": "refs/tags/local-check-target-only-2026-10-10"
+  "revision_ref": "refs/tags/local-2026-10-10"
 }
