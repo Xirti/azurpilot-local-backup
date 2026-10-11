@@ -1,0 +1,13 @@
+{
+  "upstream_url": "https://gitcode.com/ddl2/AzurLaneAutoScript",
+  "upstream_revision": "ba2a5146dde4b6dbe72054a466ab149a408e6661",
+  "snapshot_client_date": "2026-10-10",
+  "license": "GPL-3.0",
+  "source_files_copied": 11962,
+  "live_source_modified_by_snapshot": false,
+  "live_configuration_changes_this_round": [
+    "EnableRemoteAccess=false"
+  ],
+  "published_target_files_initial_snapshot": 11657,
+  "published_tests_or_investigation_scripts": false
+}

@@ -1,0 +1,109 @@
+{
+  "client_date": "2026-10-10",
+  "timestamps": "沿用日志原时间，不转换时区；本机资源为单次快照",
+  "logs": {
+    "2026-10-09_alas2.txt": {
+      "first": "2026-10-09 00:00:02.754",
+      "last": "2026-10-09 20:52:42.440",
+      "counts": {
+        "Nemu截图调用超时警告": 512,
+        "Nemu截图重试耗尽": 9,
+        "MaaTouch重试耗尽": 1,
+        "45秒自律寻敌报错": 0,
+        "PT格式回退": 28,
+        "奖励解析失败": 1,
+        "D3未找到": 55,
+        "月数据无法解析": 7,
+        "SSH断开警告": 0,
+        "停止工作进程失败": 0,
+        "更新服务器403": 0
+      }
+    },
+    "2026-10-10_alas2.txt": {
+      "first": "2026-10-10 01:28:46.262",
+      "last": "2026-10-10 17:45:11.403",
+      "counts": {
+        "Nemu截图调用超时警告": 491,
+        "Nemu截图重试耗尽": 0,
+        "MaaTouch重试耗尽": 1,
+        "45秒自律寻敌报错": 0,
+        "PT格式回退": 18,
+        "奖励解析失败": 0,
+        "D3未找到": 0,
+        "月数据无法解析": 3,
+        "SSH断开警告": 0,
+        "停止工作进程失败": 0,
+        "更新服务器403": 0
+      }
+    },
+    "2026-10-09_webui.txt": {
+      "first": "2026-10-09 00:01:03.363",
+      "last": "2026-10-09 20:53:31.250",
+      "counts": {
+        "Nemu截图调用超时警告": 0,
+        "Nemu截图重试耗尽": 0,
+        "MaaTouch重试耗尽": 0,
+        "45秒自律寻敌报错": 0,
+        "PT格式回退": 0,
+        "奖励解析失败": 0,
+        "D3未找到": 0,
+        "月数据无法解析": 10,
+        "SSH断开警告": 114,
+        "停止工作进程失败": 1,
+        "更新服务器403": 1
+      }
+    },
+    "2026-10-10_webui.txt": {
+      "first": "2026-10-10 01:04:10.668",
+      "last": "2026-10-10 17:45:38.040",
+      "counts": {
+        "Nemu截图调用超时警告": 0,
+        "Nemu截图重试耗尽": 0,
+        "MaaTouch重试耗尽": 0,
+        "45秒自律寻敌报错": 0,
+        "PT格式回退": 0,
+        "奖励解析失败": 0,
+        "D3未找到": 0,
+        "月数据无法解析": 2,
+        "SSH断开警告": 6,
+        "停止工作进程失败": 1,
+        "更新服务器403": 1
+      }
+    }
+  },
+  "live_directory_sizes": {
+    "log": {
+      "files": 414,
+      "MiB": 346.9
+    },
+    "screenshots": {
+      "files": 0,
+      "MiB": 0.0
+    },
+    "config": {
+      "files": 23,
+      "MiB": 12.7
+    }
+  },
+  "hardware": {
+    "cpu": "Intel Core i5-5200U",
+    "physical_cores": 2,
+    "logical_threads": 4,
+    "ram_GiB": 7.88,
+    "os": "Windows 10 Pro 19045",
+    "emulator": "MuMu 12",
+    "emulator_cpu": 2,
+    "emulator_ram_GiB": 4,
+    "game_resolution": "1280x720",
+    "fps_observed": 30
+  },
+  "live_repair_hash_checks": {
+    "module/os/map.py": true,
+    "module/os_handler/map_event.py": true,
+    "gui.py": true,
+    "module/runtime/local_webui_stop.py": true
+  },
+  "live_remote_access_after_change": false,
+  "configuration_migration_fixture": "当前三个大世界任务的 Enable=false/Sensitive=true 经内存迁移后保持不变",
+  "github_repository": "https://github.com/Xirti/azurpilot-local-backup"
+}

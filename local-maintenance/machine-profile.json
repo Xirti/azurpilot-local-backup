@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "client_date": "2026-10-10",
+  "hardware": {
+    "cpu": "Intel Core i5-5200U",
+    "physical_cores": 2,
+    "logical_threads": 4,
+    "ram_GiB": 7.88,
+    "os": "Windows 10 Pro 19045",
+    "emulator": "MuMu 12",
+    "emulator_cpu": 2,
+    "emulator_ram_GiB": 4,
+    "game_resolution": "1280x720",
+    "fps_observed": 30
+  },
+  "deployment": {
+    "EnableReload": false,
+    "CheckUpdateInterval": 0,
+    "AutoRestartTime": null,
+    "EnableRemoteAccess": false,
+    "DiscordRichPresence": false,
+    "StartOcrServer": false,
+    "UseOcrServer": false,
+    "WebuiHost": "127.0.0.1",
+    "WebuiPort": 22269,
+    "Run": null,
+    "Repository": "https://github.com/Xirti/azurpilot-local-backup",
+    "Branch": "main",
+    "GitExecutable": "C:/Program Files/Git/cmd/git.exe"
+  },
+  "settings": [
+    {
+      "path": "Alas.Optimization.OcrDevice",
+      "value": "cpu",
+      "label": "OCR设备"
+    },
+    {
+      "path": "Alas.Optimization.OcrWindowsMlVendorEp",
+      "value": false,
+      "label": "自动安装并使用厂商 EP"
+    },
+    {
+      "path": "Alas.Optimization.ScreenshotInterval",
+      "value": 0.3,
+      "label": "放慢截图速度至 X 秒一张"
+    },
+    {
+      "path": "Alas.Optimization.CombatScreenshotInterval",
+      "value": 1.0,
+      "label": "战斗中放慢截图速度至 X 秒一张"
+    },
+    {
+      "path": "Alas.DropRecord.TelemetryReport",
+      "value": false,
+      "label": "遥测数据上报"
+    },
+    {
+      "path": "Alas.DropRecord.BugReport",
+      "value": false,
+      "label": "Bug 日志上报"
+    },
+    {
+      "path": "Alas.Error.LlmAnalysis",
+      "value": false,
+      "label": "启用 LLM 错误分析"
+    },
+    {
+      "path": "Alas.DropRecord.OpsiHazard1Leveling",
+      "value": "do_not",
+      "label": "侵蚀一掉落截图"
+    },
+    {
+      "path": "Alas.DropRecord.OpsiMeowfficerFarming",
+      "value": "do_not",
+      "label": "短猫掉落截图"
+    },
+    {
+      "path": "Alas.DropRecord.OpsiDaily",
+      "value": "do_not",
+      "label": "大世界每日掉落截图"
+    },
+    {
+      "path": "Alas.DropRecord.OpsiObscure",
+      "value": "do_not",
+      "label": "隐秘海域掉落截图"
+    },
+    {
+      "path": "Alas.DropRecord.OpsiAbyssal",
+      "value": "do_not",
+      "label": "深渊海域掉落截图"
+    },
+    {
+      "path": "Alas.DropRecord.OpsiStronghold",
+      "value": "do_not",
+      "label": "塞壬要塞掉落截图"
+    },
+    {
+      "path": "Alas.DropRecord.OpsiExplore",
+      "value": "do_not",
+      "label": "每月开荒掉落截图"
+    },
+    {
+      "path": "Alas.DropRecord.OpsiOther",
+      "value": "do_not",
+      "label": "其他大世界任务掉落截图"
+    },
+    {
+      "path": "Alas.Optimization.OcrBackend",
+      "value": "onnxruntime",
+      "label": "OCR后端"
+    },
+    {
+      "path": "Alas.Optimization.OcrModelVersionChinese",
+      "value": "alocr_cn_v3",
+      "label": "OCR中文模型版本"
+    },
+    {
+      "path": "Alas.Optimization.OcrModelVersionEnglish",
+      "value": "alocr_en_v2_6",
+      "label": "OCR英文模型版本"
+    }
+  ],
+  "pause_monthly_tasks": [
+    "OpsiExplore",
+    "OpsiHazard1Leveling",
+    "OpsiScheduling"
+  ],
+  "notes": [
+    "真实配置和密钥不进入 GitHub。",
+    "只逐项修改存在的键；不覆盖新版的完整配置。",
+    "本地版首次不自动开始任务；恢复开荒前人工复核智能调度。"
+  ],
+  "observed_before_local_copy": {
+    "Optimization": {
+      "OcrDevice": {
+        "value": "cpu",
+        "webui": "OCR设备"
+      },
+      "OcrBackend": {
+        "value": "auto",
+        "webui": "OCR后端"
+      },
+      "OcrWindowsMlVendorEp": {
+        "value": true,
+        "webui": "自动安装并使用厂商 EP"
+      },
+      "OcrModelVersionChinese": {
+        "value": "auto",
+        "webui": "OCR中文模型版本"
+      },
+      "OcrModelVersionEnglish": {
+        "value": "auto",
+        "webui": "OCR英文模型版本"
+      },
+      "ScreenshotInterval": {
+        "value": 0.3,
+        "webui": "放慢截图速度至 X 秒一张"
+      },
+      "CombatScreenshotInterval": {
+        "value": 1.0,
+        "webui": "战斗中放慢截图速度至 X 秒一张"
+      },
+      "TaskHoardingDuration": {
+        "value": 1,
+        "webui": "囤积任务 X 分钟"
+      },
+      "CloseEmulatorDuringLongWait": {
+        "value": true,
+        "webui": "长时间等待时关闭模拟器"
+      },
+      "WhenTaskQueueEmpty": {
+        "value": "goto_main",
+        "webui": "当任务队列清空后"
+      },
+      "WhenSchedulerStopped": {
+        "value": "stay_there",
+        "webui": "停止调度器后"
+      },
+      "WarmupEnable": {
+        "value": true,
+        "webui": "在任务开始前预热启动模拟器与游戏"
+      },
+      "WarmupMinutes": {
+        "value": 15,
+        "webui": "在任务开始前 X 分钟预热启动模拟器与游戏"
+      }
+    },
+    "Emulator": {
+      "ScreenshotMethod": {
+        "value": "nemu_ipc",
+        "webui": "选择截图方案"
+      },
+      "ControlMethod": {
+        "value": "MaaTouch",
+        "webui": "选择控制方案"
+      },
+      "GameSettings": {
+        "value": false,
+        "webui": "自动应用推荐游戏设置"
+      },
+      "ScreenshotDedithering": {
+        "value": false,
+        "webui": "去除图片色彩抖动"
+      },
+      "AdbRestart": {
+        "value": false,
+        "webui": "在检测不到设备的时候尝试重启adb"
+      }
+    },
+    "Error": {
+      "HandleError": {
+        "value": true,
+        "webui": "启用异常处理"
+      },
+      "SaveError": {
+        "value": true,
+        "webui": "出错时，保存 Log 和截图"
+      },
+      "StrictRestart": {
+        "value": true,
+        "webui": "敏感任务出错时禁止重启"
+      },
+      "TaskRestartLimit": {
+        "value": 3,
+        "webui": "同一任务连续重启上限"
+      },
+      "SaveErrorRetentionDays": {
+        "value": 7,
+        "webui": "错误日志过期天数"
+      },
+      "ScreenshotLength": {
+        "value": 10,
+        "webui": "出错时，保留最后 X 张截图"
+      },
+      "WatchdogEnable": {
+        "value": false,
+        "webui": "启用运行监护总开关"
+      },
+      "WatchdogTaskEnable": {
+        "value": false,
+        "webui": "任务跑太久自动重启"
+      },
+      "RestartOperationTimeoutEnable": {
+        "value": false,
+        "webui": "重启游戏保护开关"
+      },
+      "GameStuckRestart": {
+        "value": true,
+        "webui": "游戏卡死时重启模拟器"
+      },
+      "AdbOfflineRestart": {
+        "value": false,
+        "webui": "检测不到设备时重启模拟器"
+      },
+      "LlmAnalysis": {
+        "value": false,
+        "webui": "启用 LLM 错误分析"
+      }
+    },
+    "DropRecord": {
+      "RetentionDays": {
+        "value": 0,
+        "webui": "截图保留天数"
+      },
+      "CombatRecord": {
+        "value": "do_not",
+        "webui": "战斗掉落截图"
+      },
+      "CommissionIncomeScreenshot": {
+        "value": "save",
+        "webui": "委托收益截图"
+      },
+      "OpsiHazard1Leveling": {
+        "value": "upload",
+        "webui": "侵蚀一掉落截图"
+      },
+      "OpsiMeowfficerFarming": {
+        "value": "upload",
+        "webui": "短猫掉落截图"
+      },
+      "OpsiDaily": {
+        "value": "upload",
+        "webui": "大世界每日掉落截图"
+      },
+      "OpsiExplore": {
+        "value": "upload",
+        "webui": "每月开荒掉落截图"
+      },
+      "OpsiOther": {
+        "value": "upload",
+        "webui": "其他大世界任务掉落截图"
+      },
+      "TelemetryReport": {
+        "value": false,
+        "webui": "遥测数据上报"
+      },
+      "BugReport": {
+        "value": false,
+        "webui": "Bug 日志上报"
+      }
+    },
+    "EmulatorManagement": {}
+  }
+}

@@ -1,0 +1,731 @@
+"""每日总结的运行时事件与发送状态存储。"""
+
+from __future__ import annotations
+
+import sqlite3
+import threading
+from collections import defaultdict
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+from module.logger import logger
+from module.statistics import opsi_secure
+
+
+DEFAULT_DAILY_SUMMARY_DB = Path('./config/daily_summary.db')
+DAILY_SUMMARY_RETENTION_DAYS = 35
+
+
+class _ClosingConnection(sqlite3.Connection):
+    """让事务上下文在提交或回滚后关闭连接，避免 Windows 文件锁残留。"""
+
+    def __enter__(self):
+        self._transaction = opsi_secure.immediate_transaction(self)
+        try:
+            return self._transaction.__enter__()
+        except BaseException:
+            # 事务进入失败时同样要关闭连接，不能留下文件锁。
+            self.close()
+            raise
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return self._transaction.__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
+class DailySummaryStore:
+    """以 SQLite 保存日报所需的最小运行时数据。"""
+
+    def __init__(self, db_path: str | Path | None = None) -> None:
+        self.db_path = Path(db_path or DEFAULT_DAILY_SUMMARY_DB)
+        self._lock = threading.RLock()
+        self._pending_degradations: set[tuple[str, str, str]] = set()
+        self._initialized = False
+
+    def _connect(self) -> sqlite3.Connection:
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # 日报不能因为数据库锁竞争阻塞游戏调度；本次记录失败会在后续日报中标为未知。
+        connection = sqlite3.connect(self.db_path, timeout=0.05, factory=_ClosingConnection)
+        connection.execute('PRAGMA busy_timeout = 50')
+        connection.execute('PRAGMA journal_mode = WAL')
+        connection._store_path = self.db_path
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def _ensure_tables(self) -> None:
+        with self._lock:
+            if self._initialized:
+                return
+            with self._connect() as connection:
+                connection.execute(
+                    '''
+                    CREATE TABLE IF NOT EXISTS daily_summary_task_runs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        instance TEXT NOT NULL,
+                        task TEXT NOT NULL,
+                        started_at TEXT NOT NULL,
+                        finished_at TEXT,
+                        status TEXT,
+                        duration_seconds REAL
+                    )
+                    '''
+                )
+                connection.execute(
+                    '''
+                    CREATE INDEX IF NOT EXISTS idx_daily_summary_task_runs_window
+                    ON daily_summary_task_runs (instance, finished_at)
+                    '''
+                )
+                connection.execute(
+                    '''
+                    CREATE TABLE IF NOT EXISTS daily_summary_cl1_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        instance TEXT NOT NULL,
+                        ts TEXT NOT NULL,
+                        duration_seconds REAL NOT NULL,
+                        estimated_exp INTEGER NOT NULL,
+                        secure_payload TEXT
+                    )
+                    '''
+                )
+                connection.execute(
+                    '''
+                    CREATE INDEX IF NOT EXISTS idx_daily_summary_cl1_events_window
+                    ON daily_summary_cl1_events (instance, ts)
+                    '''
+                )
+                connection.execute(
+                    '''
+                    CREATE TABLE IF NOT EXISTS daily_summary_periods (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        instance TEXT NOT NULL,
+                        period_key TEXT NOT NULL,
+                        server TEXT NOT NULL,
+                        window_start TEXT NOT NULL,
+                        window_end TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        report_text TEXT,
+                        llm_attempts INTEGER NOT NULL DEFAULT 0,
+                        send_attempts INTEGER NOT NULL DEFAULT 0,
+                        error_kind TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(instance, period_key)
+                    )
+                    '''
+                )
+                connection.execute(
+                    '''
+                    CREATE INDEX IF NOT EXISTS idx_daily_summary_periods_cleanup
+                    ON daily_summary_periods (window_end)
+                    '''
+                )
+                connection.execute(
+                    '''
+                    CREATE TABLE IF NOT EXISTS daily_summary_collection_state (
+                        instance TEXT PRIMARY KEY,
+                        task_tracking_started_at TEXT,
+                        cl1_tracking_started_at TEXT
+                    )
+                    '''
+                )
+                connection.execute(
+                    '''
+                    CREATE TABLE IF NOT EXISTS daily_summary_collection_gaps (
+                        instance TEXT NOT NULL,
+                        collection TEXT NOT NULL,
+                        occurred_at TEXT NOT NULL,
+                        PRIMARY KEY (instance, collection, occurred_at)
+                    )
+                    '''
+                )
+                connection.execute(
+                    '''
+                    CREATE INDEX IF NOT EXISTS idx_daily_summary_collection_gaps_window
+                    ON daily_summary_collection_gaps (instance, collection, occurred_at)
+                    '''
+                )
+                columns = {row[1] for row in connection.execute('PRAGMA table_info(daily_summary_cl1_events)')}
+                if 'secure_payload' not in columns:
+                    connection.execute('ALTER TABLE daily_summary_cl1_events ADD COLUMN secure_payload TEXT')
+            self._initialized = True
+
+    @staticmethod
+    def _serialize_time(value: datetime) -> str:
+        return value.replace(microsecond=0).isoformat(sep=' ')
+
+    def _mark_collection_degraded(
+        self, instance: str, collection: str, occurred_at: datetime
+    ) -> None:
+        """缓存失败采集事件，待下次可写入时持久化为本周期数据不完整。"""
+        with self._lock:
+            self._pending_degradations.add(
+                (instance, collection, self._serialize_time(occurred_at))
+            )
+
+    def _flush_pending_degradations(
+        self, connection: sqlite3.Connection
+    ) -> set[tuple[str, str, str]]:
+        pending = set(self._pending_degradations)
+        if pending:
+            connection.executemany(
+                '''
+                INSERT OR IGNORE INTO daily_summary_collection_gaps (
+                    instance, collection, occurred_at
+                ) VALUES (?, ?, ?)
+                ''',
+                pending,
+            )
+        return pending
+
+    def _clear_pending_degradations(
+        self, persisted: set[tuple[str, str, str]]
+    ) -> None:
+        with self._lock:
+            self._pending_degradations.difference_update(persisted)
+
+    def _get_collection_gap(
+        self,
+        connection: sqlite3.Connection,
+        instance: str,
+        collection: str,
+        start: datetime,
+        end: datetime,
+    ) -> str | None:
+        row = connection.execute(
+            '''
+            SELECT MIN(occurred_at) AS occurred_at
+            FROM daily_summary_collection_gaps
+            WHERE instance = ? AND collection = ?
+              AND occurred_at >= ? AND occurred_at < ?
+            ''',
+            (
+                instance,
+                collection,
+                self._serialize_time(start),
+                self._serialize_time(end),
+            ),
+        ).fetchone()
+        return row['occurred_at'] if row is not None else None
+
+    def _mark_collection_started(
+        self,
+        connection: sqlite3.Connection,
+        instance: str,
+        column: str,
+        started_at: datetime,
+    ) -> None:
+        """仅首次记录采集起点，后续日报据此判断统计是否完整。"""
+        if column not in {'task_tracking_started_at', 'cl1_tracking_started_at'}:
+            raise ValueError(f'未知日报采集列: {column}')
+        connection.execute(
+            'INSERT OR IGNORE INTO daily_summary_collection_state (instance) VALUES (?)',
+            (instance,),
+        )
+        connection.execute(
+            f'''
+            UPDATE daily_summary_collection_state
+            SET {column} = ?
+            WHERE instance = ? AND {column} IS NULL
+            ''',
+            (self._serialize_time(started_at), instance),
+        )
+    def record_task_start(self, instance: str, task: str, started_at: datetime) -> int | None:
+        """记录任务开始，失败时返回 ``None`` 而不影响调度器。
+
+        Args:
+            instance (str): 实例名称。
+            task (str): 任务名称。
+            started_at (datetime): 任务启动时间。
+
+        Returns:
+            int | None: 数据库自增记录 ID，失败返回 None。
+        """
+        try:
+            self._ensure_tables()
+            with self._lock, self._connect() as connection:
+                persisted = self._flush_pending_degradations(connection)
+                self._mark_collection_started(
+                    connection, instance, 'task_tracking_started_at', started_at
+                )
+                cursor = connection.execute(
+                    '''
+                    INSERT INTO daily_summary_task_runs (instance, task, started_at)
+                    VALUES (?, ?, ?)
+                    ''',
+                    (instance, task, self._serialize_time(started_at)),
+                )
+            self._clear_pending_degradations(persisted)
+            return int(cursor.lastrowid)
+        except Exception as error:
+            self._mark_collection_degraded(instance, 'task', started_at)
+            logger.warning(f'[日报] 记录任务开始失败，已忽略: {type(error).__name__}')
+            return None
+
+    def record_task_finish(
+        self,
+        instance: str,
+        run_id: int | None,
+        finished_at: datetime,
+        status: str,
+        duration_seconds: float,
+    ) -> None:
+        """补全已记录任务的结果；不会向外抛出数据库错误。
+
+        Args:
+            instance (str): 实例名称。
+            run_id (int | None): record_task_start 返回的记录 ID。
+            finished_at (datetime): 任务结束时间。
+            status (str): 任务结束状态（如 'success', 'failed', 'recoverable'）。
+            duration_seconds (float): 任务耗时（秒）。
+        """
+        if run_id is None:
+            return
+        try:
+            self._ensure_tables()
+            with self._lock, self._connect() as connection:
+                persisted = self._flush_pending_degradations(connection)
+                connection.execute(
+                    '''
+                    UPDATE daily_summary_task_runs
+                    SET finished_at = ?, status = ?, duration_seconds = ?
+                    WHERE id = ?
+                    ''',
+                    (
+                        self._serialize_time(finished_at),
+                        status,
+                        max(0.0, float(duration_seconds)),
+                        run_id,
+                    ),
+                )
+            self._clear_pending_degradations(persisted)
+        except Exception as error:
+            self._mark_collection_degraded(instance, 'task', finished_at)
+            logger.warning(f'[日报] 记录任务结果失败，已忽略: {type(error).__name__}')
+
+    def get_task_summary(self, instance: str, start: datetime, end: datetime, limit: int = 15) -> dict[str, Any]:
+        """聚合在统计窗口内结束的结构化任务结果。
+
+        Args:
+            instance (str): 实例名称。
+            start (datetime): 窗口开始时间。
+            end (datetime): 窗口结束时间。
+            limit (int): 返回任务细分列表的条数上限。
+
+        Returns:
+            dict[str, Any]: 结构化任务统计结果字典。
+        """
+        self._ensure_tables()
+        with self._lock, self._connect() as connection:
+            persisted = self._flush_pending_degradations(connection)
+            state = connection.execute(
+                '''
+                SELECT task_tracking_started_at
+                FROM daily_summary_collection_state
+                WHERE instance = ?
+                ''',
+                (instance,),
+            ).fetchone()
+            tracking_started_at = (
+                state['task_tracking_started_at'] if state is not None else None
+            )
+            degraded_at = self._get_collection_gap(
+                connection, instance, 'task', start, end
+            )
+            rows = []
+            if (
+                tracking_started_at is not None
+                and tracking_started_at <= self._serialize_time(start)
+                and degraded_at is None
+            ):
+                rows = connection.execute(
+                    '''
+                    SELECT task, status, duration_seconds
+                    FROM daily_summary_task_runs
+                    WHERE instance = ?
+                      AND finished_at >= ?
+                      AND finished_at < ?
+                      AND status IS NOT NULL
+                    ORDER BY finished_at ASC
+                    ''',
+                    (
+                        instance,
+                        self._serialize_time(start),
+                        self._serialize_time(end),
+                    ),
+                ).fetchall()
+        self._clear_pending_degradations(persisted)
+        if tracking_started_at is None or tracking_started_at > self._serialize_time(start) or degraded_at:
+            return {
+                'available': False,
+                'collection_started_at': tracking_started_at,
+                'degraded_at': degraded_at,
+                'run_count': None,
+                'success_count': None,
+                'recoverable_count': None,
+                'failed_count': None,
+                'duration_seconds': None,
+                'task_breakdown': [],
+            }
+        totals = {'success': 0, 'recoverable': 0, 'failed': 0}
+        task_totals: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {
+                'runs': 0,
+                'success': 0,
+                'recoverable': 0,
+                'failed': 0,
+                'duration_seconds': 0,
+            }
+        )
+        duration_seconds = 0
+        for row in rows:
+            status = row['status']
+            if status not in totals:
+                continue
+            duration = max(0, round(float(row['duration_seconds'] or 0)))
+            totals[status] += 1
+            duration_seconds += duration
+            task_data = task_totals[row['task']]
+            task_data['runs'] += 1
+            task_data[status] += 1
+            task_data['duration_seconds'] += duration
+        breakdown = []
+        for task, task_data in task_totals.items():
+            breakdown.append({'name': task, **task_data})
+        breakdown.sort(
+            key=lambda item: (item['duration_seconds'], item['runs'], item['name']),
+            reverse=True,
+        )
+        return {
+            'available': True,
+            'collection_started_at': tracking_started_at,
+            'degraded_at': None,
+            'run_count': sum(totals.values()),
+            'success_count': totals['success'],
+            'recoverable_count': totals['recoverable'],
+            'failed_count': totals['failed'],
+            'duration_seconds': duration_seconds,
+            'task_breakdown': breakdown[:max(0, int(limit))],
+        }
+    def record_cl1_battle_event(self, instance: str, timestamp: datetime, duration_seconds: float, estimated_exp: int) -> None:
+        """记录可精确归属到日报窗口的侵蚀 1 战斗事件。
+
+        Args:
+            instance (str): 实例名称。
+            timestamp (datetime): 战斗发生时间。
+            duration_seconds (float): 战斗耗时（秒）。
+            estimated_exp (int): 预估获得经验值。
+        """
+        try:
+            self._ensure_tables()
+            with self._lock, self._connect() as connection:
+                persisted = self._flush_pending_degradations(connection)
+                self._mark_collection_started(
+                    connection, instance, 'cl1_tracking_started_at', timestamp
+                )
+                cursor = connection.execute(
+                    'INSERT INTO daily_summary_cl1_events(instance,ts,duration_seconds,estimated_exp) VALUES(?,?,0,0)',
+                    (instance, self._serialize_time(timestamp)))
+                row = {'id': cursor.lastrowid, 'instance': instance, 'ts': self._serialize_time(timestamp)}
+                payload = opsi_secure.serialize_obj({'duration_seconds': max(0.0, float(duration_seconds)),
+                                                     'estimated_exp': max(0, int(estimated_exp))})
+                connection.execute('UPDATE daily_summary_cl1_events SET secure_payload=? WHERE id=?', (payload, row['id']))
+                cutoff = self._serialize_time(
+                    timestamp - timedelta(days=DAILY_SUMMARY_RETENTION_DAYS)
+                )
+                connection.execute(
+                    'DELETE FROM daily_summary_cl1_events WHERE ts < ?',
+                    (cutoff,),
+                )
+            self._clear_pending_degradations(persisted)
+        except Exception as error:
+            self._mark_collection_degraded(instance, 'cl1', timestamp)
+            logger.warning(f'[日报] 记录侵蚀1战斗事件失败，已忽略: {type(error).__name__}')
+
+    def get_cl1_interval_summary(self, instance: str, start: datetime, end: datetime) -> dict[str, Any]:
+        """读取指定窗口内的新式侵蚀 1 战斗事件。
+
+        Args:
+            instance (str): 实例名称。
+            start (datetime): 窗口开始时间。
+            end (datetime): 窗口结束时间。
+
+        Returns:
+            dict[str, Any]: 侵蚀 1 战斗聚合统计字典。
+        """
+        self._ensure_tables()
+        with self._lock, self._connect() as connection:
+            persisted = self._flush_pending_degradations(connection)
+            state = connection.execute(
+                '''
+                SELECT cl1_tracking_started_at
+                FROM daily_summary_collection_state
+                WHERE instance = ?
+                ''',
+                (instance,),
+            ).fetchone()
+            tracking_started_at = (
+                state['cl1_tracking_started_at'] if state is not None else None
+            )
+            degraded_at = self._get_collection_gap(
+                connection, instance, 'cl1', start, end
+            )
+            row = None
+            if (
+                tracking_started_at is not None
+                and tracking_started_at <= self._serialize_time(start)
+                and degraded_at is None
+            ):
+                records = connection.execute(
+                    'SELECT * FROM daily_summary_cl1_events WHERE instance=? AND ts>=? AND ts<? ORDER BY ts',
+                    (instance, self._serialize_time(start), self._serialize_time(end))).fetchall()
+                decoded = []
+                for record in records:
+                    item = dict(record)
+                    payload = opsi_secure.decode_record('daily', item['secure_payload'],
+                                                        opsi_secure.row_context('daily', item))
+                    if payload is None:
+                        raise opsi_secure.StoreUnavailable('日报事件记录暂不可读')
+                    decoded.append(dict(item, **payload))
+                row = {'battles': len(decoded), 'estimated_exp': sum(r['estimated_exp'] for r in decoded),
+                       'duration_seconds': sum(r['duration_seconds'] for r in decoded),
+                       'first_observed_at': decoded[0]['ts'] if decoded else None,
+                       'last_observed_at': decoded[-1]['ts'] if decoded else None}
+        self._clear_pending_degradations(persisted)
+        if tracking_started_at is None or tracking_started_at > self._serialize_time(start) or degraded_at:
+            return {
+                'start': self._serialize_time(start),
+                'end': self._serialize_time(end),
+                'available': False,
+                'collection_started_at': tracking_started_at,
+                'degraded_at': degraded_at,
+                'window_has_data': None,
+                'battles': None,
+                'estimated_exp': None,
+                'duration_seconds': None,
+                'first_observed_at': None,
+                'last_observed_at': None,
+            }
+        battles = int(row['battles'] or 0) if row is not None else 0
+        return {
+            'start': self._serialize_time(start),
+            'end': self._serialize_time(end),
+            'available': True,
+            'collection_started_at': tracking_started_at,
+            'degraded_at': None,
+            'window_has_data': battles > 0,
+            'battles': battles,
+            'estimated_exp': int(row['estimated_exp'] or 0) if row is not None else 0,
+            'duration_seconds': round(
+                float(row['duration_seconds'] or 0), 2
+            ) if row is not None else 0.0,
+            'first_observed_at': row['first_observed_at'] if row is not None else None,
+            'last_observed_at': row['last_observed_at'] if row is not None else None,
+        }
+
+    def claim_period(
+        self,
+        instance: str,
+        period_key: str,
+        server: str,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> bool:
+        """原子抢占一份日报，确保同一实例周期只会生成一次。
+
+        Args:
+            instance (str): 实例名称。
+            period_key (str): 周期唯一标识。
+            server (str): 服务器代码。
+            window_start (datetime): 周期开始时间。
+            window_end (datetime): 周期结束时间。
+
+        Returns:
+            bool: 成功抢占返回 True，已被抢占或已存在返回 False。
+        """
+        self._ensure_tables()
+        now = self._serialize_time(datetime.now())
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute(
+                '''
+                INSERT OR IGNORE INTO daily_summary_periods (
+                    instance, period_key, server, window_start, window_end,
+                    status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'generating', ?, ?)
+                ''',
+                (
+                    instance,
+                    period_key,
+                    server,
+                    self._serialize_time(window_start),
+                    self._serialize_time(window_end),
+                    now,
+                    now,
+                ),
+            )
+            return cursor.rowcount == 1
+
+    def mark_period_skipped(
+        self,
+        instance: str,
+        period_key: str,
+        server: str,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> None:
+        """记录错过的周期，防止进程恢复后补发旧日报。
+
+        Args:
+            instance (str): 实例名称。
+            period_key (str): 周期唯一标识。
+            server (str): 服务器代码。
+            window_start (datetime): 周期开始时间。
+            window_end (datetime): 周期结束时间。
+        """
+        self._ensure_tables()
+        now = self._serialize_time(datetime.now())
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                '''
+                INSERT OR IGNORE INTO daily_summary_periods (
+                    instance, period_key, server, window_start, window_end,
+                    status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'skipped', ?, ?)
+                ''',
+                (
+                    instance,
+                    period_key,
+                    server,
+                    self._serialize_time(window_start),
+                    self._serialize_time(window_end),
+                    now,
+                    now,
+                ),
+            )
+
+    def update_period(
+        self,
+        instance: str,
+        period_key: str,
+        status: str,
+        *,
+        report_text: str | None = None,
+        llm_attempts: int | None = None,
+        send_attempts: int | None = None,
+        error_kind: str | None = None,
+    ) -> None:
+        """更新日报处理状态，不保存异常正文或敏感配置。
+
+        Args:
+            instance (str): 实例名称。
+            period_key (str): 周期唯一标识。
+            status (str): 目标状态 ('generating', 'sending', 'sent', 'failed', 'skipped')。
+            report_text (str | None): 生成的日报正文。
+            llm_attempts (int | None): LLM 调用次数。
+            send_attempts (int | None): 推送发送次数。
+            error_kind (str | None): 错误类别代码。
+        """
+        self._ensure_tables()
+        values: dict[str, Any] = {
+            'status': status,
+            'updated_at': self._serialize_time(datetime.now()),
+        }
+        if report_text is not None:
+            values['report_text'] = None
+        if llm_attempts is not None:
+            values['llm_attempts'] = int(llm_attempts)
+        if send_attempts is not None:
+            values['send_attempts'] = int(send_attempts)
+        if error_kind is not None:
+            values['error_kind'] = error_kind
+        with self._lock, self._connect() as connection:
+            if report_text is not None:
+                values['report_text'] = str(report_text)
+            assignments = ', '.join(f'{key} = ?' for key in values)
+            parameters = [*values.values(), instance, period_key]
+            connection.execute(
+                f'''
+                UPDATE daily_summary_periods
+                SET {assignments}
+                WHERE instance = ? AND period_key = ?
+                ''',
+                parameters,
+            )
+
+    def get_period(self, instance: str, period_key: str) -> dict[str, Any] | None:
+        """读取单个周期状态，供测试和运行时去重检查使用。
+
+        Args:
+            instance (str): 实例名称。
+            period_key (str): 周期唯一标识。
+
+        Returns:
+            dict[str, Any] | None: 周期记录字典，不存在返回 None。
+        """
+        self._ensure_tables()
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                '''
+                SELECT * FROM daily_summary_periods
+                WHERE instance = ? AND period_key = ?
+                ''',
+                (instance, period_key),
+            ).fetchone()
+        result = dict(row) if row is not None else None
+        if result and result.get('report_text'):
+            result['report_text'] = opsi_secure.decode_text(
+                result['report_text'], opsi_secure.report_context(instance, period_key))
+        return result
+
+    def cleanup(self, now: datetime | None = None, keep_days: int = 35) -> None:
+        """删除过期的任务事件和日报状态。
+
+        Args:
+            now (datetime | None): 当前参考时间。
+            keep_days (int): 保留天数，默认 35 天。
+        """
+        self._ensure_tables()
+        now = now or datetime.now()
+        cutoff = self._serialize_time(now - timedelta(days=max(1, int(keep_days))))
+        interrupted_cutoff = self._serialize_time(now - timedelta(days=1))
+        with self._lock, self._connect() as connection:
+            # 进程意外退出不会让周期永久停留在处理中，也不会触发补发。
+            connection.execute(
+                '''
+                UPDATE daily_summary_periods
+                SET status = 'failed', error_kind = COALESCE(error_kind, 'interrupted'),
+                    updated_at = ?
+                WHERE status IN ('generating', 'sending') AND window_end < ?
+                ''',
+                (self._serialize_time(now), interrupted_cutoff),
+            )
+            connection.execute(
+                '''
+                DELETE FROM daily_summary_task_runs
+                WHERE COALESCE(finished_at, started_at) < ?
+                ''',
+                (cutoff,),
+            )
+            connection.execute(
+                'DELETE FROM daily_summary_cl1_events WHERE ts < ?',
+                (cutoff,),
+            )
+            connection.execute(
+                'DELETE FROM daily_summary_collection_gaps WHERE occurred_at < ?',
+                (cutoff,),
+            )
+            connection.execute(
+                'DELETE FROM daily_summary_periods WHERE window_end < ?',
+                (cutoff,),
+            )
+
+
+_default_store = DailySummaryStore()
+
+
+def get_daily_summary_store() -> DailySummaryStore:
+    """返回进程内共享的日报运行时存储。"""
+    return _default_store

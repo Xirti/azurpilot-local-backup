@@ -1,0 +1,248 @@
+diff --git a/module/os/map.py b/module/os/map.py
+--- a/module/os/map.py
++++ b/module/os/map.py
+@@ -1004,8 +1004,10 @@
+                  AUTO_SEARCH_REWARD（获得自动搜索奖励时）。
+         """
+         logger.hr("大世界自动搜索", level=2)
+         self.on_auto_search_battle_count_reset()
++        # 新守护循环开始独立的开启预算，切图和事件耗时不计入上一轮重试。
++        self._os_auto_search_enable_budget_clear()
+         unlock_checked = False
+         unlock_check_timer = Timer(5, count=10).start()
+         self.ash_popup_canceled = False
+         self._os_auto_search_started = False
+diff --git a/module/os_handler/map_event.py b/module/os_handler/map_event.py
+--- a/module/os_handler/map_event.py
++++ b/module/os_handler/map_event.py
+@@ -384,17 +384,20 @@
+         command = getattr(getattr(self.config, 'task', None), 'command', None)
+         fast_farming = command in ('OpsiHazard1Leveling', 'OpsiMeowfficerFarming')
+         if self.match_template_color(AUTO_SEARCH_OS_MAP_OPTION_OFF, offset=(5, 120)):
+             if self.info_bar_count() >= 2:
++                self._os_auto_search_enable_budget_clear()
+                 self.device.screenshot_interval_set()
+                 self.os_auto_search_quit(drop=drop)
+                 raise CampaignEnd
+         if self.match_template_color(AUTO_SEARCH_OS_MAP_OPTION_OFF_DISABLED, offset=(5, 120)):
+             if self.info_bar_count() >= 2:
++                self._os_auto_search_enable_budget_clear()
+                 self.device.screenshot_interval_set()
+                 self.os_auto_search_quit(drop=drop)
+                 raise CampaignEnd
+         if self.appear(AUTO_SEARCH_REWARD, offset=(50, 50)):
++            self._os_auto_search_enable_budget_clear()
+             self.device.screenshot_interval_set()
+             cleared = self.os_auto_search_quit(drop=drop)
+             if fast_farming and enable is True \
+                     and getattr(self, '_os_auto_search_started', False):
+diff --git a/gui.py b/gui.py
+--- a/gui.py
++++ b/gui.py
+@@ -188,8 +188,11 @@
+     """
+     import uvicorn
+ 
+     server = uvicorn.Server(config)
++    # 固定本地入口可请求正常退出，沿用 ASGI 生命周期回收任务和辅助服务。
++    from module.runtime.local_webui_stop import watch_shutdown
++    watch_shutdown(server)
+     if ready_event is not None:
+         threading.Thread(
+             target=_watch_server_started,
+             args=(server, ready_event),
+diff --git a/module/runtime/local_webui_stop.py b/module/runtime/local_webui_stop.py
+new file mode 100644
+--- /dev/null
++++ b/module/runtime/local_webui_stop.py
+@@ -0,0 +1,76 @@
++"""固定启动入口通过本机命名事件请求 Uvicorn 正常退出。"""
++
++import os
++import re
++import sys
++import threading
++
++
++EVENT_ENV = 'AZURPILOT_LOCAL_STOP_EVENT'
++EVENT_PATTERN = r'Local\\AzurPilot-WebUI-[0-9a-f]{32}'
++
++
++def event_name_is_valid(name: str) -> bool:
++    return re.fullmatch(EVENT_PATTERN, name) is not None
++
++
++def windows_events():
++    """声明句柄宽度，避免 64 位 Windows 上截断命名事件句柄。"""
++    import ctypes
++    from ctypes import wintypes
++    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
++    kernel.CreateEventW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
++    kernel.CreateEventW.restype = wintypes.HANDLE
++    kernel.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
++    kernel.OpenEventW.restype = wintypes.HANDLE
++    kernel.SetEvent.argtypes = [wintypes.HANDLE]
++    kernel.SetEvent.restype = wintypes.BOOL
++    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
++    kernel.WaitForSingleObject.restype = wintypes.DWORD
++    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
++    kernel.CloseHandle.restype = wintypes.BOOL
++    return kernel
++
++
++def watch_shutdown(server):
++    """仅固定 Windows 入口启用；触发后走 ASGI 原有资源清理流程。"""
++    name = os.environ.get(EVENT_ENV, '')
++    if sys.platform != 'win32' or not event_name_is_valid(name):
++        return None
++    import ctypes
++    kernel = windows_events()
++    handle = kernel.CreateEventW(None, False, False, name)
++    if not handle:
++        raise ctypes.WinError(ctypes.get_last_error())
++
++    def monitor():
++        try:
++            while not server.should_exit:
++                result = kernel.WaitForSingleObject(handle, 500)
++                if result == 0:
++                    server.should_exit = True
++                    return
++                if result != 258:
++                    return
++        finally:
++            kernel.CloseHandle(handle)
++
++    thread = threading.Thread(target=monitor, name='local-webui-stop', daemon=True)
++    thread.start()
++    return thread
++
++
++def signal_shutdown(name: str):
++    """只触发已有事件，不创建新事件，不按进程名批量终止。"""
++    if sys.platform != 'win32' or not event_name_is_valid(name):
++        raise RuntimeError('本地关闭通道无效。')
++    import ctypes
++    kernel = windows_events()
++    handle = kernel.OpenEventW(0x0002, False, name)
++    if not handle:
++        raise RuntimeError('本地关闭通道不存在，请用新版固定入口启动 WebUI。')
++    try:
++        if not kernel.SetEvent(handle):
++            raise ctypes.WinError(ctypes.get_last_error())
++    finally:
++        kernel.CloseHandle(handle)
+diff --git a/deploy/frontend.py b/deploy/frontend.py
+--- a/deploy/frontend.py
++++ b/deploy/frontend.py
+@@ -163,9 +163,14 @@
+     paths.extend(sorted((directory / 'src').rglob('*')))
+     paths.extend(sorted((directory / 'public').rglob('*')))
+     digest = hashlib.sha256()
+     for path in paths:
+-        if path.is_file():
++        relative = path.relative_to(directory)
++        # 测试与 mock 只留在本机；它们不参与生产产物，也不影响备份检出后的指纹。
++        local_only = any(part in ('test', 'tests', '__tests__', 'mock', 'e2e', 'fixtures')
++                         for part in relative.parts)
++        local_only |= '.test.' in path.name or '.spec.' in path.name
++        if path.is_file() and not local_only:
+             digest.update(path.relative_to(directory).as_posix().encode())
+             digest.update(path.read_bytes())
+     return digest.hexdigest()
+ 
+@@ -234,8 +239,10 @@
+     marker = directory / 'dist/.source-fingerprint'
+     fingerprint = source_fingerprint(directory)
+     if (directory / 'dist/index.html').is_file() and marker.is_file() and marker.read_text().strip() == fingerprint:
+         return
++    if os.environ.get('AZURPILOT_LOCAL_MODE') == '1':
++        raise RuntimeError('本地模式前端缺失或指纹不匹配；请先手动构建，不会自动联网安装。')
+     if os.environ.get('AZURPILOT_ANDROID') == '1':
+         # 安卓永不本地编译：宿主按提交发布预构建 dist，缺失即报错，
+         # 更新服务在应用前会先探测 dist 可用性，正常流程不会走到这里。
+         _android_fetch_dist(directory, Path(root) if root else Path(__file__).resolve().parents[1])
+diff --git a/frontend/index.html b/frontend/index.html
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -3,9 +3,10 @@
+   <head>
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+     <meta name="theme-color" content="#101e2c" />
+-    <meta name="description" content="AzurPilot" />
++    <meta name="description" content="AzurPilot 本机版" />
++    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'" />
+     <script>
+       // 隧道反代入口形如 /<peer_id>，不带尾斜杠时相对路径会丢掉前缀而打到服务端。
+       // 只在单段路径（隧道入口形态）补斜杠；根路径、已带斜杠与多段路径一律不动。
+       if (/^\/[^/]+$/.test(location.pathname)) {
+@@ -13,14 +14,7 @@
+       }
+     </script>
+     <link rel="icon" type="image/svg+xml" href="%BASE_URL%azurpilot.svg" />
+     <title>AzurPilot</title>
+-    <script type="text/javascript">
+-      (function(c,l,a,r,i,t,y){
+-        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+-        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+-        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+-      })(window, document, "clarity", "script", "yhqqveymur");
+-    </script>
+   </head>
+   <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+ </html>
+diff --git a/frontend/src/app/theme.ts b/frontend/src/app/theme.ts
+--- a/frontend/src/app/theme.ts
++++ b/frontend/src/app/theme.ts
+@@ -22,11 +22,11 @@
+   compactRailSide: CompactRailSide; compactRailWidth: CompactRailWidth
+   material: Material
+ }
+ const defaults: Preference = {
+-  theme: 'light', palette: 'ocean', colorMode: 'auto', customPalettes: [],
++  theme: 'minimal', palette: 'ocean', colorMode: 'auto', customPalettes: [],
+   compactRailSide: COMPACT_RAIL_DEFAULT_SIDE, compactRailWidth: COMPACT_RAIL_DEFAULT_WIDTH,
+-  material: 'glass',
++  material: 'plain',
+ }
+ 
+ /** 走 Apple 玻璃/壁纸/装饰动画一档的主题；旧版浅色与深色是朴素风格，不在此列。 */
+ const MATERIAL_THEMES: readonly Theme[] = ['light', 'dark']
+@@ -84,9 +84,9 @@
+     const customPalettes = readCustomPalettes(localStorage.getItem('azurpilot.custom-palettes'))
+     const railSide = localStorage.getItem('azurpilot.compact-rail-side')
+     const railWidth = Number(localStorage.getItem('azurpilot.compact-rail-width'))
+     const storedMaterial = localStorage.getItem('azurpilot.material')
+-    const resolvedTheme = VALID_THEMES.includes(theme ?? '') ? theme as Theme : 'light'
++    const resolvedTheme = VALID_THEMES.includes(theme ?? '') ? theme as Theme : defaults.theme
+     return {
+       theme: resolvedTheme,
+       material: MATERIALS.includes(storedMaterial as Material) ? storedMaterial as Material : defaultMaterial(resolvedTheme),
+       palette: palettes.some(item => item === palette) || customPalettes.some(item => item.id === palette) ? palette as Palette : 'ocean',
+diff --git a/frontend/src/app/motionPrefs.ts b/frontend/src/app/motionPrefs.ts
+--- a/frontend/src/app/motionPrefs.ts
++++ b/frontend/src/app/motionPrefs.ts
+@@ -22,12 +22,12 @@
+     const speed = Number(rawSpeed)
+     const strength = localStorage.getItem(STRENGTH_KEY)
+     return {
+       speed: rawSpeed !== null && (speed === 1 || speed === 2 || speed === 4) ? (speed as MotionSpeed) : 2,
+-      strength: strength === 'standard' ? 'standard' : 'strong',
+-      reduced: localStorage.getItem(REDUCED_KEY) === '1',
++      strength: strength === 'strong' ? 'strong' : 'standard',
++      reduced: localStorage.getItem(REDUCED_KEY) !== '0',
+     }
+-  } catch { return {speed: 2, strength: 'strong', reduced: false} }
++  } catch { return {speed: 2, strength: 'standard', reduced: true} }
+ }
+ 
+ const browser = typeof window !== 'undefined' && typeof document !== 'undefined'
+ 
+@@ -77,5 +77,5 @@
+ 
+ export const setMotionSpeed = (speed: MotionSpeed) => commit({...state, speed})
+ export const setMotionStrength = (strength: MotionStrength) => commit({...state, strength})
+ export const setMotionReduced = (reduced: boolean) => commit({...state, reduced})
+-export const resetMotionPrefs = () => commit({speed: 2, strength: 'strong', reduced: false})
++export const resetMotionPrefs = () => commit({speed: 2, strength: 'standard', reduced: true})

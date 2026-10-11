@@ -1,0 +1,270 @@
+# AzurPilot
+
+# Runtime
+log
+cache/
+screenshots/
+debug_ocr/
+ocr_debug/
+
+config/reloadflag
+config/reloadalas
+config/webui-dependency-sync-pending
+
+# User configuration and runtime data
+config/backup/*
+/AzurPilot_Data_Backup/
+
+config/*.ini
+!config/template.ini
+
+config/*.yaml
+!config/deploy.*.yaml
+
+config/*.json
+!config/template*.json
+
+config/scheduler/
+config/stock-exchange/
+config/opsi_secure/
+
+config/*.db
+config/*/config.db*
+config/*/account.destroyed
+config/tmp*
+
+/password.txt
+
+# Development and debugging
+*.pyw
+dev_tools/debug_tools
+/campaign/test/
+/toolkit
+PaddleOCR
+
+# Tests
+test/*
+!test/ncnn_ocr_benchmark.py
+!test/ncnn_models/
+!test/ncnn_ocr_benchmark.zh-CN.md
+
+# Documentation
+docs/*
+!docs/modules/
+
+# Local directories
+/Alasio
+/f
+/workers
+/debug_img
+
+# AI and coding tools
+.codex/
+.claude/
+.dsh/
+.agents/
+.trae/
+.workbuddy/
+.zcode/
+.cursor/
+.graphflow-cache/
+.zcodeignore
+RTK.md
+
+# Frontend
+frontend/node_modules/
+frontend/test-results/
+frontend/playwright-report/
+frontend/*.tsbuildinfo
+
+.github/scripts/node_modules/
+.github/scripts/package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+*.manifest
+*.spec
+
+pip-log.txt
+pip-delete-this-directory.txt
+
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+*.mo
+*.pot
+
+*.log
+local_settings.py
+db.sqlite3
+
+instance/
+.webassets-cache
+.scrapy
+docs/_build/
+target/
+
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+.python-version
+
+celerybeat-schedule
+*.sage.py
+
+# Python environments
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+.spyderproject
+.spyproject
+.ropeproject
+
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+pyrightconfig.json
+
+# Lock files
+*.lock
+!uv.lock
+
+# IDE and editor files
+.idea/
+.vs/
+.vscode/*
+.idea_modules/
+
+*.iws
+out/
+cmake-build-*/
+
+atlassian-ide-plugin.xml
+com_crashlytics_export_strings.xml
+crashlytics.properties
+crashlytics-build.properties
+fabric.properties
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+adb_port.txt
+adb_port.ini
+alas.exe
+!popup.exe
+*.zip
+console.bat
+
+# Accidental "nul" file on Windows
+# MSYS2 ssh may treat os.devnull == "nul" as a regular file instead of
+# the Windows null device, causing SSH known_hosts data to be written
+# into a real file named "nul" in the working directory.
+/nul
+
+# macOS
+.DS_Store
+
+# Cursor Helper
+cursor-helper/**/diff/
+cursor-helper/**/docs/
+cursor-helper/**/rule_improvements.md
+cursor-helper/**/fix/fix_plan.md
+cursor-helper/**/review/reports/files/
+
+# Backup files
+*.bak
+
+# Intentionally tracked:
+# cursor-helper/**/review/reports/summary/**
+# cursor-helper/**/fix/fix_report.md
+# cursor-helper/**/organize-rules/**
+# 本机版：预构建前端随源码备份；私人配置和安装包保留在本机
+!frontend/dist/
+!frontend/dist/**
+/local-maintenance/private/
+/local-maintenance/runtime.json
+/local-maintenance/offline-artifacts/
+/local-maintenance/validation-private.json
+/python-runtime/
+# 白名单保留公开模板；其它配置目录一律只存本机
+/config/*
+!/config/template*.json
+!/config/deploy.template*.yaml
+!/config/webui_bg.css
+*.pem
+*.key
+# 本机验证材料不进入源码备份
+/tests/
+/test/
+/dev_tools/
+/.github/
+/.agents/
+/.claude/
+/.cursor/
+/cursor-helper/
+/frontend/test/
+/frontend/tests/
+/frontend/e2e/
+/frontend/mock/
+**/__tests__/
+**/fixtures/
+*.test.*
+*.spec.*
+test_*.py
+*_test.py
+conftest.py
+/frontend/playwright*.config.*
+/frontend/vitest.config.*
