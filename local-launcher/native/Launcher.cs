@@ -398,7 +398,6 @@ sealed class LauncherForm : Form {
             var supported=json.Deserialize<Dictionary<string,object>>(capability);
             if(!supported.ContainsKey("protocol")||Convert.ToInt32(supported["protocol"])!=1)throw new InvalidOperationException("WebUI 不支持界面交接。");
             string url=CreateTicket("#/");
-            TopMost=true;
             if(selectedMode=="desktop") {
                 desktop=new DesktopForm(startUrl,Icon,HideToTray,QuitDesktop);
                 await desktop.Prepare(environment,url);
@@ -427,14 +426,13 @@ sealed class LauncherForm : Form {
             DesktopForm target=desktop;
             revealingDesktop=true;hideAfterReveal=false;
             try {
-                ConfigureDesktop();target.BeginReveal();
+                ConfigureDesktop();target.BeginReveal(this);
                 await Task.WhenAll(Fade(this,1,0,600),Fade(target,0,1,600));
                 if(IsDisposed)return;
                 Hide();TopMost=false;ShowInTaskbar=false;
                 if(view!=null){Controls.Remove(view);view.Dispose();view=null;}
                 revealingDesktop=false;
                 if(hideAfterReveal)HideToTray();
-                else if(desktop==target&&!target.IsDisposed)target.Activate();
             }finally{revealingDesktop=false;}
         }else {await Fade(this,1,0,600);allowClose=true;Close();}
     }

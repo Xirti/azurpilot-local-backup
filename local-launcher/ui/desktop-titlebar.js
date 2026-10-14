@@ -102,7 +102,7 @@ const i18n={"hideLabel": "最小化到托盘", "minimizeLabel": "最小化窗口
                     }
                     if(topbar && topbar!==observedTopbar){topbarObserver.disconnect();topbarObserver.observe(topbar);observedTopbar=topbar;}
                     if (h > 0) {
-                        const scale=Math.max(20/36,Math.min(1.15,(h-12)/36));
+                        const scale=Math.max(20/36,Math.min(.95,(h-12)/36));
                         titlebar.style.setProperty('--alas-control-scale',String(scale));
                         titlebar.style.setProperty('--alas-control-top',Math.max(6,(h-36*scale)/2)+'px');
                         document.documentElement.style.setProperty('--alas-control-reserve',Math.ceil(135*scale+23)+'px');

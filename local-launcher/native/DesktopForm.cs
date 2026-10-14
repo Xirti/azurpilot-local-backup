@@ -18,6 +18,7 @@ sealed class DesktopForm : Form {
     [DllImport("user32.dll")] static extern int GetSystemMetricsForDpi(int index,uint dpi);
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr window);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
     [StructLayout(LayoutKind.Sequential)] struct WindowPosition {
         public IntPtr window,insertAfter;
         public int x,y,width,height;
@@ -198,6 +199,12 @@ sealed class DesktopForm : Form {
     void Reply(string id,bool success,object result,string error) {
         if(!IsDisposed&&view.CoreWebView2!=null)view.CoreWebView2.PostWebMessageAsJson(json.Serialize(new{kind="desktop-result",id=id,success=success,result=result,error=error}));
     }
-    public void BeginReveal() {preparing=false;ShowInTaskbar=true;WindowState=FormWindowState.Normal;Show();}
+    public void BeginReveal(Form predecessor=null) {
+        // 首屏交接沿用启动器的前后顺序；后台加载完成不抢到其它窗口上方。
+        ShowInTaskbar=true;WindowState=FormWindowState.Normal;Show();
+        if(predecessor!=null&&!predecessor.IsDisposed&&predecessor.Visible)
+            SetWindowPos(Handle,predecessor.Handle,0,0,0,0,0x0213);
+        preparing=false;
+    }
     public void DestroyWindow() {forceClose=true;Close();}
 }
