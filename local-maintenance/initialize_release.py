@@ -7,59 +7,88 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import maintain
+from runtime_layout import base_python
 
 
-def initialize_git(root: Path, check_only: bool) -> None:
+def initialize_git(root: Path, check_only: bool, cancelled=None) -> None:
     """仅为完整离线包导入随包源码历史；已有 Git 目录交给版本校验。"""
-    if (root / '.git').exists():
-        return
     bundle = root / 'local-maintenance/offline-artifacts/source.bundle'
-    if check_only or not bundle.is_file():
-        raise RuntimeError('源码版本记录缺失，请运行完整离线包的初始化入口。')
     git = str(root / '.venv/Scripts/git/cmd/git.exe')
     manifest = maintain.read_json(root / 'local-repairs/manifest.json')
     reference = manifest['revision_ref']
     if not reference.startswith('refs/tags/'):
         raise ValueError('离线版本标签格式错误。')
     flags = {'creationflags': subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32' else {}
-    def run(*arguments):
-        subprocess.run([git, '-C', str(root), *arguments], check=True, capture_output=True,
-                       timeout=180, **flags)
+    def run(*arguments, check=True):
+        if cancelled is not None and cancelled():
+            raise KeyboardInterrupt
+        command = [git, '-C', str(root), *arguments]
+        # 启动后端持续读取控制管道；Git 必须使用独立输入，否则 Windows 下会阻塞。
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, **flags)
+        started = time.monotonic()
+        next_message = started + 10
+        try:
+            while True:
+                if cancelled is not None and cancelled():
+                    raise KeyboardInterrupt
+                remaining = 180 - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, 180)
+                try:
+                    stdout, stderr = process.communicate(timeout=min(.2, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() >= next_message:
+                        print('[初始化] 正在准备本地版本记录，可查看启动日志或中断。', flush=True)
+                        next_message = time.monotonic() + 10
+                    continue
+        except BaseException:
+            if process.poll() is None:
+                process.kill()
+            process.communicate()
+            raise
+        result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        if check:
+            result.check_returncode()
+        return result
+    if (root / '.git').exists():
+        if run('rev-parse', '--verify', 'HEAD^{commit}', check=False).returncode == 0:
+            return
+        # 上次在 init 后中断时仅留下空仓库，可继续导入；已有分支和索引不覆盖。
+        refs = run('show-ref', check=False)
+        if refs.returncode != 1 or (root / '.git/index').exists():
+            raise RuntimeError('版本记录未完成且包含已有内容，请先检查 .git。')
+    if check_only or not bundle.is_file():
+        raise RuntimeError('源码版本记录缺失，请通过启动器初始化完整离线包。')
     run('init')
     run('config', '--local', 'core.autocrlf', 'false')
-    run('fetch', '--no-tags', str(bundle), 'refs/heads/main:refs/heads/main',
+    run('fetch', '--update-head-ok', '--no-tags', str(bundle), 'refs/heads/main:refs/heads/main',
         reference + ':' + reference)
     run('symbolic-ref', 'HEAD', 'refs/heads/main')
     run('read-tree', 'HEAD')
-    run('remote', 'add', 'origin', 'https://github.com/Xirti/azurpilot-local-backup.git')
+    if run('remote', 'get-url', 'origin', check=False).returncode:
+        run('remote', 'add', 'origin', 'https://github.com/Xirti/azurpilot-local-backup.git')
     run('config', '--local', 'branch.main.remote', 'origin')
     run('config', '--local', 'branch.main.merge', 'refs/heads/main')
 
 
-def initialize(root: Path, check_only: bool = False) -> dict:
+def initialize(root: Path, check_only: bool = False, cancelled=None) -> dict:
     maintain.assert_stopped(root)
-    for relative in ['.venv/Scripts/python.exe', '.venv/Scripts/git/cmd/git.exe',
-                     'python-runtime/cpython-3.14.6-windows-x86_64-none/python.exe']:
+    for relative in ['.venv/Scripts/python.exe', '.venv/Scripts/git/cmd/git.exe']:
         if not (root / relative).is_file():
             raise RuntimeError(f'完整离线运行环境缺失：{relative}')
-    initialize_git(root, check_only)
-    config_path = root / 'config/alas2.json'
+    base_python(root)
+    initialize_git(root, check_only, cancelled)
     deploy_path = root / 'config/deploy.yaml'
     created = []
     if not check_only:
         profile = maintain.load_profile()
-        if not config_path.is_file():
-            data = maintain.read_json(root / 'config/template.json')
-            # 只对首次创建的公共默认实例使用本机原值，不覆盖已有用户选择。
-            for item in profile['preserve_user_settings']:
-                maintain.set_existing(data, item['path'], item['original_value'])
-            config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n',
-                                   encoding='utf-8', newline='\n')
-            created.append('config/alas2.json')
         if not deploy_path.is_file():
             text = (root / 'config/deploy.template.yaml').read_text(encoding='utf-8-sig')
             values = dict(profile['deployment'], InstallDependencies=False,
@@ -68,20 +97,17 @@ def initialize(root: Path, check_only: bool = False) -> dict:
                 text = maintain.replace_deployment(text, name, value)
             deploy_path.write_text(text, encoding='utf-8', newline='\n')
             created.append('config/deploy.yaml')
-        result = maintain.restore(root, 'alas2', pause_monthly=True)
-    else:
-        result = {}
     spec = importlib.util.spec_from_file_location('release_launcher', root / 'local-repairs/webui_launcher.py')
     launcher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(launcher)
     manifest = launcher.verify_repair(root)
-    audit = maintain.audit(root, 'alas2')
+    audit = maintain.audit(root, '')
     if not audit['configuration_matches'] or not all(audit['repair_hashes'].values()):
         raise RuntimeError('本地配置或修复校验未通过，请检查本地设置。')
     return {'created_public_configuration': created,
-            'existing_user_configuration_preserved': 'config/alas2.json' not in created,
+            'existing_user_configuration_preserved': True,
             'revision': manifest['verified_revision'], 'guarded_files': len(manifest['files']),
-            'game_started': False, **result}
+            'game_started': False, 'instances': maintain.instance_names(root)}
 
 
 def main() -> int:

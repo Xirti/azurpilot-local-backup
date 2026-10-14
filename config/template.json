@@ -120,17 +120,17 @@
       "TriggerTime": "20:00"
     },
     "Optimization": {
-      "OcrDevice": "auto",
-      "OcrBackend": "auto",
-      "OcrWindowsMlVendorEp": true,
-      "OcrModelVersionEnglish": "auto",
-      "OcrModelVersionChinese": "auto",
+      "OcrDevice": "cpu",
+      "OcrBackend": "onnxruntime",
+      "OcrWindowsMlVendorEp": false,
+      "OcrModelVersionEnglish": "alocr_en_v2_6",
+      "OcrModelVersionChinese": "alocr_cn_v3",
       "OcrModelVersionJapanese": "auto",
       "OcrModelVersionTraditionalChinese": "auto",
       "ScreenshotInterval": 0.3,
       "CombatScreenshotInterval": 1.0,
       "TaskHoardingDuration": 0,
-      "CloseEmulatorDuringLongWait": false,
+      "CloseEmulatorDuringLongWait": true,
       "WhenTaskQueueEmpty": "goto_main",
       "WhenSchedulerStopped": "stay_there",
       "WarmupEnable": true,
@@ -147,18 +147,18 @@
       "CommissionRecord": "do_not",
       "CommissionIncomeScreenshot": "save",
       "CombatRecord": "do_not",
-      "OpsiHazard1Leveling": "upload",
-      "OpsiMeowfficerFarming": "upload",
-      "OpsiDaily": "upload",
-      "OpsiObscure": "upload",
-      "OpsiAbyssal": "upload",
-      "OpsiStronghold": "upload",
-      "OpsiExplore": "upload",
-      "OpsiOther": "upload",
+      "OpsiHazard1Leveling": "do_not",
+      "OpsiMeowfficerFarming": "do_not",
+      "OpsiDaily": "do_not",
+      "OpsiObscure": "do_not",
+      "OpsiAbyssal": "do_not",
+      "OpsiStronghold": "do_not",
+      "OpsiExplore": "do_not",
+      "OpsiOther": "do_not",
       "MeowfficerBuy": "do_not",
       "MeowfficerTalent": "do_not",
-      "TelemetryReport": true,
-      "BugReport": true
+      "TelemetryReport": false,
+      "BugReport": false
     },
     "Backup": {
       "Enable": true,
@@ -2669,7 +2669,7 @@
       "SuccessInterval": 0,
       "FailureInterval": 0,
       "ServerUpdate": "00:00",
-      "Sensitive": false
+      "Sensitive": true
     },
     "OpsiExplore": {
       "SpecialRadar": false,
@@ -2932,7 +2932,7 @@
       "SuccessInterval": 30,
       "FailureInterval": 60,
       "ServerUpdate": "00:00, 12:00",
-      "Sensitive": false
+      "Sensitive": true
     },
     "OpsiHazard1Leveling": {
       "TargetZone": 0,
@@ -2980,7 +2980,7 @@
       "SuccessInterval": 30,
       "FailureInterval": 30,
       "ServerUpdate": "00:00",
-      "Sensitive": false
+      "Sensitive": true
     },
     "OpsiScheduling": {
       "BuyActionPoint": false,

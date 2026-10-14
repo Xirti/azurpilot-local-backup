@@ -1,53 +1,8 @@
-"""本地版默认限制 Python 标准网络连接到本机回环地址。"""
-import errno
-import ipaddress
-import os
-import socket
+"""本地运行入口的兼容模块，保留 Python 原有网络行为。
 
-def _loopback(host):
-    if isinstance(host, bytes):
-        host = host.decode('ascii', 'strict')
-    if str(host).lower().rstrip('.') == 'localhost':
-        return True
-    try:
-        return ipaddress.ip_address(str(host).split('%')[0]).is_loopback
-    except ValueError:
-        return False
+本地版表示使用本机 WebUI、识别和预装运行环境，并由部署配置关闭
+自动更新、远程隧道与可选上报。服务器预检、游戏网关和 NTP 校时仍需
+正常联网，因此不能在进程启动时全局替换 socket 或禁止外部 DNS。
 
-def _allow_address(sock, address):
-    if sock.family == getattr(socket, 'AF_UNIX', object()):
-        return
-    if sock.family not in (socket.AF_INET, socket.AF_INET6) or not _loopback(address[0]):
-        raise PermissionError(errno.EACCES, '本地模式禁止 Python 外网连接')
-
-def install():
-    if getattr(socket, '_azurpilot_local_guard', False):
-        return
-    original_connect = socket.socket.connect
-    original_connect_ex = socket.socket.connect_ex
-    original_sendto = socket.socket.sendto
-    original_getaddrinfo = socket.getaddrinfo
-    def connect(sock, address):
-        _allow_address(sock, address)
-        return original_connect(sock, address)
-    def connect_ex(sock, address):
-        try:
-            _allow_address(sock, address)
-        except PermissionError:
-            return errno.EACCES
-        return original_connect_ex(sock, address)
-    def sendto(sock, *args):
-        _allow_address(sock, args[-1])
-        return original_sendto(sock, *args)
-    def getaddrinfo(host, *args, **kwargs):
-        if host is not None and not _loopback(host):
-            raise PermissionError(errno.EACCES, '本地模式禁止外部 DNS 查询')
-        return original_getaddrinfo(host, *args, **kwargs)
-    socket.socket.connect = connect
-    socket.socket.connect_ex = connect_ex
-    socket.socket.sendto = sendto
-    socket.getaddrinfo = getaddrinfo
-    socket._azurpilot_local_guard = True
-
-if os.environ.get('AZURPILOT_LOCAL_MODE') == '1':
-    install()
+此文件保留给已有启动入口使用；不安装网络拦截器。
+"""

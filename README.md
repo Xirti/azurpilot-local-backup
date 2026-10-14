@@ -1,17 +1,52 @@
-# AzurPilot 本机备份版
+# AzurPilot 本地版
 
-本机环境：Windows10 / i5-5200U双核四线程 / 8GB / MuMu12。来源与GPL-3.0许可证保留；上游基线见 local-maintenance/provenance.json。
+面向 Windows 的碧蓝航线自动化工具，基于 [AzurPilot](https://github.com/wess09/AzurPilot)。提供统一启动器、网页端和桌面端，运行环境随发布包提供，更新由你手动选择。
 
-- [给AI读取的维护与恢复清单](local-maintenance/AI_LOCAL_MAINTENANCE.md)
-- [最简现场检查](local-maintenance/QUICK_CHECK.md)
-- [日志分析](local-maintenance/LOG_ANALYSIS.md)
-- [断网构建与限制](local-maintenance/OFFLINE_BUILD.md)
-- [Release离线包与原启动器使用](local-maintenance/RELEASE_GUIDE.md)
-- [机器可读策略](local-maintenance/machine-profile.json)
-- [原版说明](README_UPSTREAM.md)
+## 开始使用
 
-现有本机入口：“启动WebUI_无限等待.cmd” / “关闭WebUI.cmd” / “备份本机配置.cmd” / “恢复本地设置.cmd” / “检查本地设置.cmd”。WebUI只监听127.0.0.1:22269；启动不自动运行游戏任务。首次已暂停智能调度、每月开荒与侵蚀1，恢复任务前复核配置。
+需要 Windows x64、WebView2 Runtime，以及画面设为 **1280 × 720** 的安卓模拟器。
 
-此仓库备份源码、预构建前端和模型。真实配置只保存在本机；准备的 Windows Release 离线包另带运行环境与初始化入口，原启动器 EXE 单独备份。源码 ZIP 不包含运行环境。依赖/前端/游戏任务的实际验收结果见 local-maintenance/VALIDATION.md。
+1. 完整解压发布包，打开 **AzurPilot-Local.exe**。
+2. 点击「启动」，选择「网页端启动」或「桌面端启动」。首次使用自动准备本地环境并进入首页。
+3. 在首页创建或导入自己的实例，设置模拟器连接、游戏服务器和任务，再启动调度器。
 
-按用户要求，只推送运行与恢复所需文件；测试、mock、开发排查脚本、CI 和本轮临时检查工具均留在本机，且不进入备份提交历史。维护文档记录验证结果；仓库中的启动、关闭、配置备份/恢复和离线重建脚本属于实际使用入口。
+网页端通过右上角关闭入口退出服务；桌面端通过窗口菜单或托盘退出。启动器支持背景视频、音量和维护实例选择。
+
+发布包不预置实例。界面设置的明暗可选「跟随系统」「浅色」「深色」，新版、旧版均支持自动跟随系统变化。
+
+启动期间可点「查看启动日志」查看进度；失败后点「错误详情」，在详情窗口「保存日志」。同一入口也位于「更多选项 → 恢复与检查 → 启动诊断」。日志可在后台尚未启动时保存。
+
+## 更新
+
+正常退出控制台，重新打开启动器，进入 **更多选项 → 版本更新**：
+
+1. 点击「检查更新」，查看上游版本和变更摘要。
+2. 点击「更新并重启」。程序备份配置与业务数据，在独立目录准备新版、合并本地修改、安装依赖、构建页面并验证。
+3. 验证通过后，启动器切换到新版并重新打开。
+
+旧版本和它的数据会保留，可在同一页面的「版本回退」中恢复。更新失败时继续使用旧版本；出现源码冲突时，按日志中的文件列表适配后重试。
+
+更新需要联网，平时启动不会自动更新。详细步骤见 [安装与更新](local-maintenance/INSTALL_UPDATE.md)。
+
+## 备份
+
+「更多选项 → 恢复与检查 → 备份配置与数据」保存当前实例和业务记录。要备份可直接启动的离线版，退出程序后复制整个安装文件夹。
+
+新版位于 `versions`，当前版本记录和备份位于 `.updates`。请保留这两个目录；实际配置位置以当前版本目录为准。
+
+## 源码
+
+| 目录 | 内容 |
+| --- | --- |
+| `local-launcher` | 启动器界面、原生窗口和启动后端 |
+| `frontend` | 控制台界面 |
+| `module`、`campaign` | 自动化任务、识别与关卡逻辑 |
+| `local-maintenance`、`local-repairs` | 更新、备份与本地修复 |
+
+原生启动器的构建命令，`background.mp4` 为要内嵌的视频：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File local-launcher/native/build.ps1 -EmbeddedVideoPath "background.mp4"
+```
+
+维护说明见 [AI 维护清单](local-maintenance/AI_LOCAL_MAINTENANCE.md)。项目沿用 [GPL-3.0](LICENSE)，第三方组件说明见 [licenses](licenses)。感谢上游开发者的工作。

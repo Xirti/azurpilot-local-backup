@@ -19,13 +19,14 @@ const familyThemes: Record<ReturnType<typeof familyOf>, Theme[]> = {
 
 /** 界面设置：主题、材质、明暗、配色、背景与语言，只影响当前浏览器，不写进实例配置。 */
 export function InterfaceSettings() {
-  const {theme, setTheme, material, setMaterial, language, setLanguage, ui} = useApp()
+  const {theme, setTheme, colorMode, setColorMode, resolvedMode, material, setMaterial, language, setLanguage, ui} = useApp()
   const connection = useConnection()
   const family = familyOf(theme)
-  const dark = theme === 'dark' || theme === 'legacy-dark'
+  const dark = resolvedMode === 'dark'
   const switchFamily = (next: ReturnType<typeof familyOf>) => {
     const themes = familyThemes[next]
-    setTheme(themes.length === 1 ? themes[0] : themes[dark ? 1 : 0])
+    setTheme(themes.length === 1 ? themes[0] : themes[dark ? 1 : 0],
+      colorMode === 'auto' || colorMode === 'light' || colorMode === 'dark' ? colorMode : resolvedMode)
   }
 
   return (
@@ -62,10 +63,8 @@ export function InterfaceSettings() {
             <label>{ui('settings.mode')}</label>
           </div>
           <div className="field-control">
-            <SegmentedControl className="settings-segmented" label={ui('settings.mode')} value={dark ? 'dark' : 'light'} onChange={mode => {
-              const themes = familyThemes[familyOf(theme)]
-              setTheme(themes[mode === 'dark' ? 1 : 0])
-            }} options={[
+            <SegmentedControl className="settings-segmented" label={ui('settings.mode')} value={colorMode === 'auto' ? 'auto' : dark ? 'dark' : 'light'} onChange={setColorMode} options={[
+              {value: 'auto', label: ui('settings.modeAuto')},
               {value: 'light', label: ui('settings.themeLight')},
               {value: 'dark', label: ui('settings.themeDark')},
             ]}/>

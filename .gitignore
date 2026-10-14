@@ -1,11 +1,13 @@
 # AzurPilot
 
 # Runtime
+/local-launcher/ui/assets/sakura-op.mp4
 log
 cache/
 screenshots/
 debug_ocr/
 ocr_debug/
+/assets/ship/mind_calculator.json
 
 config/reloadflag
 config/reloadalas
@@ -29,6 +31,11 @@ config/stock-exchange/
 config/opsi_secure/
 
 config/*.db
+config/*.db-wal
+config/*.db-shm
+/config/azurpilot.migrated*
+/config/azurpilot.*.tmp*
+/config/storage-backups/
 config/*/config.db*
 config/*/account.destroyed
 config/tmp*
@@ -239,6 +246,10 @@ cursor-helper/**/review/reports/files/
 /local-maintenance/offline-artifacts/
 /local-maintenance/validation-private.json
 /python-runtime/
+/local-launcher/settings.json
+/local-launcher/data/
+/local-launcher/logs/
+/local-maintenance/candidate.json
 # 白名单保留公开模板；其它配置目录一律只存本机
 /config/*
 !/config/template*.json
@@ -278,3 +289,8 @@ conftest.py
 **/test/
 **/mock/
 **/e2e/
+!/local-launcher/native/app.manifest
+
+# 安装共用的版本、数据备份与构建缓存
+/.updates/
+/versions/

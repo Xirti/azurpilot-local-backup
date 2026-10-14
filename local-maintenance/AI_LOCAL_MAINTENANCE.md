@@ -1,108 +1,68 @@
-# AzurPilot 本机维护入口：给后续 AI 读取
+# AzurPilot 本机维护清单
 
-核查日期：2026-10-10。先读本文件、`machine-profile.json`、`LOG_ANALYSIS.md` 和 `OFFLINE_BUILD.md`，再核对实际版本。机器和任务状态会变，记录不能代替现场检查。
+此文供后续 AI 在更新或修复前读取。以现场的当前版本记录、manifest、provenance 和用户最新要求为准。
 
-## 用户授权与当前目录
+## 入口与本机
 
-- 用户要求：自主检查日志、保留已验证修复、建立减负与更新后恢复清单；用户自己决定何时更新，建立私有 GitHub 备份；允许关闭远程访问。
-- 推送范围：只提交运行与恢复所需文件。测试、mock、开发排查脚本与CI留在本机，禁止进入备份的任意提交历史；验证报告可以提交，验证脚本不提交。
-- 原安装：`D:\pkz6666\Englishdownlad\Alas\AzurPilot`，端口 22267。此轮原安装只关闭 `EnableRemoteAccess`；没有启动游戏、改变 MuMu 参数或替换原启动入口。
-- 独立本地版：`D:\pkz6666\Englishdownlad\Alas\AzurPilot_Local`，端口 22269。两者使用各自的源码和配置，禁止同时对同一游戏账号运行调度器。
-- 私有源码备份：[Xirti/azurpilot-local-backup](https://github.com/Xirti/azurpilot-local-backup)。GPL-3.0，保留上游许可证、原 README 与来源说明。
-- 上游基线：`ba2a5146dde4b6dbe72054a466ab149a408e6661`；本轮提交以 `refs/tags/local-2026-10-10-r2` 为准，上一版标签保留。以后使用新的验收标签，不能挪动旧标签绕过校验。
+- 当前维护对象：`D:/pkz6666/Englishdownlad/Alas/AzurPilot_Release_Backup/local-2026-10-13-r16-release1/AzurPilot_Local`。外层目录名称仍是 r16，不能据此判断内部版本。
+- 干净发行目录另置于`D:/pkz6666/Englishdownlad/Alas/AzurPilot_Release_Backup/local-2026-10-13-r23-release1/AzurPilot_Local`，不覆盖上面的现有安装及个人实例。发行目录无预置实例、浏览器偏好、日志和运行缓存。
+- 固定入口为根目录 `AzurPilot-Local.exe`。`.updates/current.json` 指向当前版本；无记录时使用根目录。先解析该记录，再找实际源码、配置和日志。
+- 日常旧副本 `D:/pkz6666/Englishdownlad/Alas/AzurPilot_Local` 与原安装 `D:/pkz6666/Englishdownlad/Alas/AzurPilot` 分开维护，不自动同步覆盖。
+- 本机 i5-5200U，2 核 / 4 线程，约 8 GiB RAM；MuMu 12 分配 2 CPU / 4 GiB，1280×720。其余配置见 `machine-profile.json`，排查前复核现场。
+- 官方更新源固定为 `https://github.com/wess09/AzurPilot.git`、`master`。私有源码备份仓库为 `Xirti/azurpilot-local-backup`。更新与上传是两个独立动作；当前不上传、不压缩。
+- 用户要求：测试、mock、诊断脚本不进入源码提交、历史或发布包。个人配置、密钥、日志、浏览器数据不上传；测试在安装目录外进行。
 
-## 机器事实与减负边界
+## 一键更新结构
 
-Intel i5-5200U，**2 个物理核心 / 4 个逻辑线程**，7.88 GiB RAM，Windows 10 Pro 19045。MuMu 12 实际 VM 分配 2 CPU / 4 GiB，1280×720，观察到低帧率配置 30 FPS。不要把“四线程”误写成“四核心”。核查时可用内存约 1.0–1.4 GiB，这是停机时的单次快照，不能证明任务期间的峰值或截图超时根因。
+`managed_installation.py` 负责固定安装根、更新锁、原子版本切换和回退；`upstream_update.py` 调度更新；`updater_sources.py` 获取受控快照并三方合并；`updater_build.py` 准备依赖、构建与数据备份；`migrate_candidate.py` 调用上游配置和数据库迁移。
 
-WebUI 页面依然会消耗浏览器内存。CMD 是启动入口，实际服务是 Python 后端加浏览器前端。Chrome/Edge 同时有较多进程，单进程占用不能归到 AzurPilot 页面。需要浏览器任务管理器按标签核对；运行任务不必常开网页。
+固定 EXE 的 `Program.InstallRoot` 不变，`Program.Root` 随当前版本切换。单实例锁、启动设置、WebView 用户数据和字体缓存跟随安装根；后台、配置、交接票据跟随当前版本。`ManagedEntry.cs` 的内部重启参数只等待原进程退出，再启动同一个固定 EXE。
 
-本地版新浏览器默认“界面设置 → 主题 → 简约”，默认减弱动效；已有明确偏好保留。开发者工具的“减少动效模拟”影响当前浏览器。运行监控选“日志”而非“截图”可取消 preview 订阅；它不是 `alas2.json` 的截图方法开关。主题等存于 localStorage，按浏览器和网页来源区分；更换端口、浏览器或无痕窗口需要复核。
+更新顺序：核验旧版 → 正常停止旧服务 → 备份全部配置及业务数据 → 获取固定上游提交 → 三方合并 → 独立环境 → 前端构建 → 新提交、标签、manifest、source.bundle → 配置和业务数据迁移 → 服务验收 → 最后原子切换。失败不切换。回退恢复上一版及其数据，不把新版数据库反向覆盖旧版。
 
-## 每次更新必须恢复的本地策略
+不要在当前运行目录执行官方安装器、reset --hard 或 clean。不要挪动旧标签绕过校验。遇到冲突按语义适配，不能整文件覆盖上游新增功能。`merge-adapters` 只接受三个输入哈希都匹配的已验证适配；输入改变即停止，不能放宽为无条件套用。
 
-先正常关闭 WebUI，再运行 `恢复本地设置.cmd`。此工具先在仓库同级保存真实 `config/`，只逐项修改现存键；新版缺少字段时停止，不用旧 JSON 整体覆盖新结构。默认同时暂停每月开荒、侵蚀1与智能调度，并将其“敏感任务”设为开启。恢复任务运行需由用户明确选择。
+新旧环境与配置均为独立副本。Python 主版本要求、数据库结构或前端构建工具变化时，先验证当前引擎是否支持，再扩展；不把“更新流程成功”写成所有游戏任务已实测。
 
-| 部署 / WebUI 选项 | 本地值 | 原因 |
+清理运行依赖时不能按 `*_test.py` 一刀切。SciPy 的 `stats/_bws_test.py` 与 `stats/_page_trend_test.py` 是运行时统计功能，游戏登录模块经 scipy.signal 会导入它们；先前误删曾导致 ModuleNotFoundError。包外测试目录仍排除，这两个库文件必须保留。更新验收包含游戏核心模块导入，不能只检查 WebUI。
+
+## 配置边界
+
+以下三项按用户要求保留，不做减负修改：
+
+| WebUI 名称 | 键 | 原记录 |
 | --- | --- | --- |
-| 允许更新 / `EnableReload` | false | 禁止 WebUI 应用更新覆盖补丁 |
-| 检查更新间隔 / `CheckUpdateInterval` | 0 | 生命周期仅在间隔 >0 时创建检查循环；false 的 EnableReload 不会单独停掉检查 |
-| 定时更新 / `AutoRestartTime` | null | 取消定时更新计划 |
-| 远程访问 / `EnableRemoteAccess` | false | 关闭 SSH 隧道与断线重连 |
-| `WebuiHost` / `WebuiPort` | 127.0.0.1 / 22269 | 仅本机访问，与原安装端口区分 |
-| `StartOcrServer` / `UseOcrServer` | false / false | 单实例保持内置 OCR，避免额外 OCR 服务 |
-| `DiscordRichPresence` / `Run` | false / null | 关闭额外连接；启动 WebUI 不自动运行账号任务 |
-| `Repository` / `Branch` | 私有备份仓库 / main | 原上游地址保存在 provenance，人工更新从候选目录进行 |
-| `GitExecutable` | ./.venv/Scripts/git/cmd/git.exe | 本机与 Release 携带原安装的 Git 工具，不依赖系统 Git 绝对路径 |
+| 长时间等待时关闭模拟器 | `Alas.Optimization.CloseEmulatorDuringLongWait` | true |
+| 当任务队列清空后 | `Alas.Optimization.WhenTaskQueueEmpty` | goto_main |
+| 停止调度器后 | `Alas.Optimization.WhenSchedulerStopped` | stay_there |
 
-| WebUI 选项名字 | JSON 键 | 本地策略 |
-| --- | --- | --- |
-| OCR设备 | `Alas.Optimization.OcrDevice` | `"cpu"` |
-| 自动安装并使用厂商 EP | `Alas.Optimization.OcrWindowsMlVendorEp` | `false` |
-| 放慢截图速度至 X 秒一张 | `Alas.Optimization.ScreenshotInterval` | `0.3` |
-| 战斗中放慢截图速度至 X 秒一张 | `Alas.Optimization.CombatScreenshotInterval` | `1.0` |
-| 遥测数据上报 | `Alas.DropRecord.TelemetryReport` | `false` |
-| Bug 日志上报 | `Alas.DropRecord.BugReport` | `false` |
-| 启用 LLM 错误分析 | `Alas.Error.LlmAnalysis` | `false` |
-| 侵蚀一掉落截图 | `Alas.DropRecord.OpsiHazard1Leveling` | `"do_not"` |
-| 短猫掉落截图 | `Alas.DropRecord.OpsiMeowfficerFarming` | `"do_not"` |
-| 大世界每日掉落截图 | `Alas.DropRecord.OpsiDaily` | `"do_not"` |
-| 隐秘海域掉落截图 | `Alas.DropRecord.OpsiObscure` | `"do_not"` |
-| 深渊海域掉落截图 | `Alas.DropRecord.OpsiAbyssal` | `"do_not"` |
-| 塞壬要塞掉落截图 | `Alas.DropRecord.OpsiStronghold` | `"do_not"` |
-| 每月开荒掉落截图 | `Alas.DropRecord.OpsiExplore` | `"do_not"` |
-| 其他大世界任务掉落截图 | `Alas.DropRecord.OpsiOther` | `"do_not"` |
-| OCR后端 | `Alas.Optimization.OcrBackend` | `"onnxruntime"` |
-| OCR中文模型版本 | `Alas.Optimization.OcrModelVersionChinese` | `"alocr_cn_v3"` |
-| OCR英文模型版本 | `Alas.Optimization.OcrModelVersionEnglish` | `"alocr_en_v2_6"` |
+迁移时保留用户的现场值。不要每次启动运行「恢复本地设置」；该操作会应用本地策略并暂停每月开荒等任务，只应由用户主动选择。暖启动仅修正环境路径，不重置配置或任务偏好。
 
-OCR 旧模型显式固定是为了避免未来 `auto` 改指更大模型。此轮选择与原 CPU/auto 实际使用的旧模型一致，不代表 lite 模型已经通过游戏精度验收。不要默认切 GPU 或 pro；只有现有截图证明识别不足时再单项比较。
+本地部署保持：EnableReload=false、CheckUpdateInterval=0、AutoRestartTime=null、EnableRemoteAccess=false、WebuiHost=127.0.0.1、WebuiPort=22269、DiscordRichPresence=false、StartOcrServer=false、UseOcrServer=false、Run=null。启动控制台不自动恢复游戏任务。
 
-## 保持或有条件试验的设置
+减负方案保存在 `machine-profile.json` 与 `maintain.py`：OCR 使用 CPU/onnxruntime、关闭厂商 EP 自动安装，中文 alocr_cn_v3、英文 alocr_en_v2_6；普通/战斗截图间隔 0.3/1.0；遥测、Bug 上报和 LLM 分析关闭，大世界掉落截图 do_not。更新后按新版参数定义和中文选项名逐项核对，不用旧 JSON 整体替换新版模板。
 
-| WebUI 选项 | 本机现状 / 建议 | 使用条件与验证 |
-| --- | --- | --- |
-| 模拟器设置 → 选择截图方案 | 现为 nemu_ipc | 高速但仍频繁超时；连续重试耗尽时先检查 VM 已开且 ADB 在线，再单项试 ADB 截图。停止任务后更改，不同时切控制方案 |
-| 模拟器设置 → 选择控制方案 | 现为 MaaTouch | 保留；单次失败随后恢复不能断言永久失效。重复初始化失败才试 ADB 控制；旧 minitouch 已有空数据报错，不能盲目改回 |
-| 放慢截图速度至 X 秒一张 / 战斗中放慢截图速度至 X 秒一张 | 0.3 / 1.0 | 当前已达帮助文案上限，不直接建议 0.8 或 2.0 等越界值 |
-| 囤积任务 X 分钟 | 现为 1 | 可试 3–5，减少零散唤醒；先确认紧迫委托、演习和活动时限，不能直接写成必改 |
-| 长时间等待时关闭模拟器 | 原配置已开启 | 用户要求保持原状，不纳入减负修改；当前逻辑等待 >3 小时才关闭 |
-| 当任务队列清空后 | 原配置 goto_main（返回主界面） | 用户要求保持原状，不改为 close_game；恢复工具保留用户当前选择 |
-| 停止调度器后 | 原配置 stay_there（停留当前页面） | 用户要求保持原状，不改为关闭游戏或模拟器；与关闭 WebUI 是不同触发路径 |
-| 在任务开始前预热启动模拟器与游戏 / 预热分钟数 | 已开启 / 15 | 冷启动可靠性与空闲占用存在取舍；先保留，若启动稳定后再试关闭或缩短 |
-| 敏感任务出错时禁止重启 | 已开启 / StrictRestart=true | 仍需每个任务的“敏感任务”开启才保护开荒；并非一项全局开关就自动覆盖所有任务 |
-| 同一任务连续重启上限 | 现为 3 | 不再增加重试次数掩盖设备/地图问题；核对该版本实际累计与复位规则 |
-| 出错时，保存 Log 和截图 / 错误日志过期天数 / 出错时，保留最后 X 张截图 | true / 7 / 10 | 保留诊断依据；不要为省磁盘关掉所有错误记录 |
-| 截图保留天数 | 现为 0 | 日志与截图累积有磁盘风险；可在确认需要留存的统计后选 7–14 天，不自动删除数据库 |
-| MuMu 分配内存 | 实际 4 GiB | 可单项 A/B 试 3 GiB，观察一次普通任务与海域切换；内存不足或加载变慢就恢复 4 GiB。没有证据支持强制 4 CPU |
+nemu_ipc 和 MaaTouch 保留；持续超时才停止任务后单项比较 ADB。错误日志/截图保留用于诊断，不为了减负直接清空数据库。MuMu 内存和 CPU 不由维护工具擅自改变。
 
-表中数值和枚举必须按更新后的 `module/config/argument/args.json` 与 zh-CN 翻译再核对。带有“可试”的建议不由恢复工具自动执行。
+## 必须保留的修复与界面
 
-## 必须保留的代码与验收
+1. 大世界 45 秒计时生命周期：新 daemon 开始和海域完成、奖励等出口清理旧计时；真实连续无法启动自律的保护仍有效。WebUI「自律寻敌时间限制（分钟）」属于另一层。
+2. 无限等待入口仍核验固定版本、修复哈希、端口和前端错误；服务实际退出时立即报告。Git校验不再以20秒判断失败，改为最多120秒、每10秒报告状态、每200ms响应取消。服务正常初始化仍可等待，加载时能查看实时启动日志，失败时提供错误详情与保存日志。不能把所有失败都改为无限等待。
+3. Windows 所有子命令显式 stdin=DEVNULL。控制线程持续读取 stdin 时，遗漏此项曾造成 Git 初始化 0 CPU 卡死；取消每 200ms 检查，只回收本次启动的子进程树。
+4. 关闭服务核对 PID、创建时间、安装目录、父进程和随机事件。保留正常 ASGI/任务清理路径，不按进程名批量强杀。网页关闭接口只允许本机同源；桌面使用原窗口菜单与托盘。
+5. 本地模式关闭页面自动外联和可选服务，保留游戏服务器检查、网关、NTP 等正常网络请求；旧 socket 全局拦截会阻塞任务，不得恢复。
+6. 前端产物及 `.source-fingerprint` 配套发布；日常启动不执行 npm ci。保留默认新版界面及已有用户偏好，不反复清空 localStorage。
+7. 桌面保留原界面与托盘。PerMonitorV2 DPI、可缩放边框、顶部抓边留白和至少 44px 顶栏配套保留；窄桌面窗口保留主页旁的悬停工具。最大化使用显示器工作区，保留 Windows 任务栏。
+8. 启动器逻辑尺寸 800×450，中文小按钮，模式选择左右排列、下方返回，半透明磨砂面板和渐变交接。视频嵌入 EXE，独立媒体域按范围流式返回；正常首帧不闪中间 poster。字体嵌入 EXE，不依赖系统字体。
+9. 新图标无文字，用于EXE、任务栏、托盘；小尺寸ICO突出圆形主体，窗口使用64px源、托盘按系统小图标尺寸选择。左上完整品牌图约116×93，距左22、距上17逻辑像素。重建EXE必须同时带视频和字体资源，并更新哈希与source.bundle。
+10. LauncherDiagnostics.cs在服务启动前就可读取本次原生/后端进度、stderr、作业及GUI/WebUI日志，日志保存由用户选择本地路径。普通stderr警告只记录，不作为终止信号；读取完输出流后再判断最终状态，避免进程结束与UI回调的顺序竞争。诊断脚本/故障注入夹具仍只放包外。
+11. 启动器明确进入首页，前端不能用last-path恢复覆盖该地址；托盘恢复仍按隐藏前地址。首次初始化只建部署设置与Git记录，不创建默认实例，不恢复/覆盖用户实例。没有实例也能启动、检查状态与备份；实例相关恢复在用户创建并选中实例后使用。
+12. 新版、旧版的明暗使用colorMode的auto/light/dark，auto订阅系统外观并同步主题成员与自定义颜色；不要只改按钮而遗漏系统变化监听。公开template保留本地运行策略与三个原始等待选项，用户创建实例时复制模板。
 
-1. 45 秒计时生命周期：`module/os/map.py` 进入新 daemon 清理旧计时；`module/os_handler/map_event.py` 在海域完成 / 奖励等三条出口清理。真实连续无法启动自律的 46 秒保护仍触发。WebUI 的“自律寻敌时间限制（分钟）”属于另一层，调大它不能修复此问题。
-2. 无限等待：`local-repairs/webui_launcher.py` 没有总启动期限，仍会检查后端退出、错误端口和前端失败；它不是所有异常都无期限等待。校验固定提交、修复哈希、更新关闭设置；缺依赖不会自动删除 `.venv` 重装。
-3. 正常关闭：`module/runtime/local_webui_stop.py` + gui 的服务退出事件；`webui_stop.py` 核对 PID、创建时间、目录、父进程与随机事件，正常关闭 ASGI 和任务辅助进程。重复关闭无害；不按 python.exe/ssh.exe 名字批量杀进程。
-4. 本地模式：前端 Clarity 脚本已移除，CSP 限制页面自动外联；Python 启动时加载 `offline-runtime/sitecustomize.py`，阻止标准 socket 的外部 DNS/连接，允许回环 WebUI/ADB。它不是 OS 防火墙，不能约束原生 DLL 或用户手动打开的外链。游戏服务器仍需网络。
-5. `deploy/frontend.py` 在本地模式缺产物 / 指纹不符时直接报告原因，不执行 npm ci。预构建前端随私有源码备份，生产启动不依赖 Node。
+## 验收与离线备份
 
-新版合入同类上游修复时先做语义比较；不要重复补丁，也不要删除真实故障保护。哈希只用来发现文件变化，不能证明新版本正确。验收后再写新 manifest 和新标签。
+针对更新验证：真实数据副本迁移与 SQLite quick_check、配置三项保留、健康接口/静态页面、前端与原生桌面交接、托盘和正常退出、失败和取消不切换、回退时数据对应。不得为验收启动用户游戏任务。
 
-## 用户决定更新的完整流程
+验证通过再固定新标签与 manifest；source.bundle 只包含允许发布的目标文件。`.updates`、`versions`、个人配置、WebView 数据、缓存与测试都不得混入源码。对外离线包应从当前版本导出干净运行文件，在新根目录使用固定 EXE；个人数据另备份。用户自己的完整离线备份可直接复制整个安装目录，包含当前/上一版和个人数据，不上传。
 
-用户已明确：上述三个等待/队列/停止选项不用于减负。原安装与本地版现场值均为 true / goto_main / stay_there，本轮未改动实际值。维护恢复工具的 settings 列表不包含这三项，更新迁移时保留用户值，不用新版默认值或减负建议替换。
-
-1. 正常关闭任务和 WebUI，运行“备份本机配置”；记下当前本地验收标签。旧目录完整保留。
-2. 在同级的新候选目录检出用户选择的上游提交。使用 `provenance.json` 的上游地址，手动联网拉取；不要在正在使用的目录运行 reset --hard、clean 或安装器。
-3. 先读取新版 AGENTS / 配置定义；复制本地维护工具与启动关闭入口。运行 `maintain.py apply-source --root <候选目录>`，其补丁先 --check，冲突则停止。更新后已被上游改写的逻辑由 AI 根据本清单逐项迁移。
-4. 将本机私有备份复制到候选的 `config/`，在候选目录通过新版 `ConfigUpdater.config_update()` 迁移并保存一次，再运行 `maintain.py apply --root <候选目录> --config alas2 --pause-monthly`。不要靠启动账号任务触发迁移；不从 GitHub 查找账号私有配置。
-5. 有依赖变化时，用户允许的联网准备阶段运行 `uv sync --frozen --no-dev` / npm ci；待准备好再 `--offline` 验证。不改变旧目录环境。前端代码有变化时重新构建并写入 `deploy.frontend.source_fingerprint`。
-6. 运行计时、启动、关闭和本地维护的针对性测试。建立新 manifest / 新提交 / 新验收标签，再在临时端口检查 /healthz、/ 和静态资源，确认外网拒绝，Run=null，游戏任务未自动运行；正常关闭并核对无 worker 残留。
-7. 用户启用普通任务验证稳定后，再单独开启每月开荒；**智能调度必须一起复核**。遇到无法识别页面不要重复重启堆重试。
-8. 私有 GitHub 只推运行源码、预构建前端、模型、配置模板、清单和恢复补丁；依据 `publish-targets.json` 核对目标，排除测试、mock与排查脚本，检查提交历史中也没有这些文件。完成真实配置/密钥扫描后推送新 main 和新验收标签。旧标签保留作为回退入口；回退时私有配置也使用对应日期备份，数据库不盲目覆盖。
-
-原来的 `alas-launcher.exe` 单独作为 Release 附件备份。用于官方更新时，应放在独立候选安装目录，核对该目录的 Repository / Branch 指向用户选择的上游，联网准备后关闭启动器，再迁移本机修复与配置。当前上游 `deploy/git.py` / `deploy/Windows/git.py` 的仓库更新会执行 reset --hard；本地版 Repository 指向私人备份，直接在本地版运行启动器不能替代获取官方更新。日常继续使用本地 CMD 入口。Release 离线包与初始化步骤见 RELEASE_GUIDE.md。
-
-## 最简现场检查
-
-见 [QUICK_CHECK.md](QUICK_CHECK.md)。源码、配置、浏览器偏好、模拟器参数四处都可能变化；不能只检查一个 JSON 或把截图主观解读当日志事实。
+当前只构建与本地验证；上传、压缩和删除旧可运行版本均按用户后续要求执行。

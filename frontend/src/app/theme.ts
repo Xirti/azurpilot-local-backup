@@ -23,9 +23,9 @@ type Preference = {
   material: Material
 }
 const defaults: Preference = {
-  theme: 'minimal', palette: 'ocean', colorMode: 'auto', customPalettes: [],
+  theme: 'light', palette: 'ocean', colorMode: 'auto', customPalettes: [],
   compactRailSide: COMPACT_RAIL_DEFAULT_SIDE, compactRailWidth: COMPACT_RAIL_DEFAULT_WIDTH,
-  material: 'plain',
+  material: 'glass',
 }
 
 /** 走 Apple 玻璃/壁纸/装饰动画一档的主题；旧版浅色与深色是朴素风格，不在此列。 */
@@ -76,6 +76,23 @@ export const showsRightRail = (theme: Theme, instance?: string) => Boolean(insta
 const VALID_THEMES: readonly string[] = ['light', 'dark', 'minimal', 'extreme',
   'legacy-light', 'legacy-dark']
 
+/** 本地版恢复新版默认界面一次；迁移后仍保留用户在界面设置中的新选择。 */
+function migrateLocalThemeDefault() {
+  try {
+    const marker = 'azurpilot.local-new-ui-default-v1'
+    if (localStorage.getItem(marker) === '1') return
+    const saved = localStorage.getItem('azurpilot.theme')
+    if (saved !== 'light' && saved !== 'dark') {
+      const dark = saved === 'legacy-dark' || localStorage.getItem('azurpilot.color-mode') === 'dark'
+      localStorage.setItem('azurpilot.theme', dark ? 'dark' : defaults.theme)
+      localStorage.setItem('azurpilot.material', defaults.material)
+    }
+    localStorage.setItem(marker, '1')
+  } catch { /* 存储不可用时由新版默认值保证当前会话可用。 */ }
+}
+
+migrateLocalThemeDefault()
+
 export function readThemePreference(): Preference {
   try {
     const theme = localStorage.getItem('azurpilot.theme')
@@ -107,14 +124,14 @@ let managedTokens: string[] = []
 /* 用户层写入的 token 记账：换大类或重置时据此清理，避免跟着新主题生效。 */
 let customTokens: string[] = []
 
-/** 有材质轴的家族由主题 id 定明暗（浅色/深色各是一个主题值），配色方案的自动与固定档位不适用于它们。 */
+/** 材质家族的主题 id 表示当前明暗，自动模式在系统变化时同步主题成员。 */
 const modeOfTheme = (theme: Theme): ResolvedMode => theme === 'dark' || theme === 'legacy-dark' ? 'dark' : 'light'
 
 /** 用户改动自定义旋钮或品牌配色后立即下发：先清上一套再写当前大类的一套（主题与皮肤都不动）。 */
-export function applyCustomLayer() {
+export function applyCustomLayer(next: Pick<Preference, 'theme'> = preference) {
   const root = document.documentElement
   for (const token of customTokens) root.style.removeProperty(token)
-  customTokens = applyFamilyCustom(root, familyOf(preference.theme), modeOfTheme(preference.theme))
+  customTokens = applyFamilyCustom(root, familyOf(next.theme), modeOfTheme(next.theme))
 }
 export const getThemePreference = () => preference
 export const subscribeTheme = (listener: () => void) => {
@@ -122,13 +139,13 @@ export const subscribeTheme = (listener: () => void) => {
   return () => { listeners.delete(listener) }
 }
 
-/** 只有简约与紧凑的自动模式订阅系统变化；切换为固定模式或经典主题即移除监听。
+/** 所有主题家族的自动模式订阅系统变化；选择固定明暗时移除监听。
     主题模式里的程序员 / 复古灰 / 复古蓝 / 复古红自带整套色值，此时忽略配色方案。 */
 function applyColorMode(next: Preference) {
   const root = document.documentElement
   const themed = usesPaletteOptions(next.theme)
   const fixed = fixedColorModes[next.colorMode]
-  const followSystem = themed && next.colorMode === 'auto'
+  const followSystem = (themed || hasMaterialAxis(next.theme)) && next.colorMode === 'auto'
   if (!followSystem) {
     systemQuery?.removeEventListener('change', systemModeChanged)
     systemQuery = undefined
@@ -138,7 +155,7 @@ function applyColorMode(next: Preference) {
   }
   const resolvedMode: ResolvedMode = fixed ? fixed.mode
     : themed ? (next.colorMode === 'auto' ? (systemQuery?.matches ? 'dark' : 'light') : next.colorMode as ResolvedMode)
-      : next.theme === 'dark' ? 'dark' : 'light'
+      : modeOfTheme(next.theme)
   if (themed) {
     const tokens = fixed ? fixed.tokens
       : paletteTokens(paletteColors(next.palette, next.customPalettes, resolvedMode), resolvedMode)
@@ -158,8 +175,7 @@ function applyColorMode(next: Preference) {
 }
 
 function systemModeChanged() {
-  preference = {...preference, resolvedMode: applyColorMode(preference)}
-  listeners.forEach(listener => listener())
+  void applyTheme({...preference}).catch(error => console.error('系统外观切换失败', error))
 }
 
 /** 紧凑主题的列序与右栏宽度以根元素属性加内联变量下发。切到其它主题时必须一并清掉，
@@ -192,6 +208,14 @@ function skinFor(theme: Theme): Skin {
 
 /** 样式作为惰性文本模块加载，切换时替换唯一节点，避免旧主题规则驻留。 */
 export async function applyTheme(next: Preference) {
+  if (hasMaterialAxis(next.theme)) {
+    const mode = next.colorMode === 'auto'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : next.colorMode === 'light' || next.colorMode === 'dark' ? next.colorMode : modeOfTheme(next.theme)
+    const theme = familyOf(next.theme) === 'legacy'
+      ? (mode === 'dark' ? 'legacy-dark' : 'legacy-light') : mode
+    next = {...next, theme}
+  }
   const request = ++revision
   const skin = skinFor(next.theme)
   let css: string | undefined
@@ -231,7 +255,7 @@ export async function applyTheme(next: Preference) {
   } else delete root.dataset.material
   const resolvedMode = applyColorMode(next)
   applyCompactLayout(root, next)
-  applyCustomLayer()
+  applyCustomLayer(next)
   try {
     localStorage.setItem('azurpilot.theme', next.theme)
     localStorage.setItem('azurpilot.palette', next.palette)

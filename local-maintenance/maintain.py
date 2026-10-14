@@ -25,6 +25,21 @@ def read_json(path):
     return json.loads(path.read_text(encoding='utf-8-sig'))
 
 
+def instance_names(root):
+    """只列出实际存在的实例，不把模板和辅助 JSON 当作实例。"""
+    names = []
+    for path in (root / 'config').glob('*.json'):
+        if path.stem.startswith('template') or path.is_symlink():
+            continue
+        try:
+            data = read_json(path)
+            if isinstance(data, dict) and isinstance(data.get('Alas'), dict):
+                names.append(path.stem)
+        except (OSError, ValueError):
+            continue
+    return sorted(names)
+
+
 def get_path(data, path):
     for part in path.split('.'):
         if not isinstance(data, dict) or part not in data:
@@ -104,8 +119,8 @@ def backup(root):
 
 def restore(root, config, pause_monthly=False):
     assert_stopped(root)
-    if not re.fullmatch(r'[A-Za-z0-9_-]+', config):
-        raise ValueError('实例名只能使用字母、数字、下划线和短横线。')
+    if not config or config not in instance_names(root):
+        raise ValueError('请先在首页创建实例，再选择要恢复本地设置的实例。')
     profile = load_profile()
     config_path = root / 'config' / (config + '.json')
     data = read_json(config_path)
@@ -144,10 +159,12 @@ def restore(root, config, pause_monthly=False):
 
 def audit(root, config):
     profile = load_profile()
-    data = read_json(root / 'config' / (config + '.json'))
+    if config and config not in instance_names(root):
+        raise ValueError('所选实例不存在，请先在首页创建实例。')
+    data = read_json(root / 'config' / (config + '.json')) if config else None
     deployment = flatten(yaml.safe_load((root / 'config/deploy.yaml').read_text(encoding='utf-8-sig')))
     discrepancies = []
-    for item in profile['settings']:
+    for item in profile['settings'] if data is not None else []:
         try:
             value = get_path(data, item['path'])
         except KeyError:
@@ -166,7 +183,8 @@ def audit(root, config):
               'discrepancies': discrepancies, 'repair_hashes': hashes,
               'monthly_tasks': {task: {key: get_path(data,f'{task}.Scheduler.{key}')
                                        for key in ['Enable','Sensitive']}
-                                for task in profile['pause_monthly_tasks']}}
+                                for task in profile['pause_monthly_tasks']} if data is not None else {},
+              'instance_available': data is not None}
     return result
 
 
@@ -195,7 +213,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['check', 'backup', 'apply', 'apply-source'])
     parser.add_argument('--root', type=Path, default=ROOT)
-    parser.add_argument('--config', default='alas2')
+    parser.add_argument('--config', default='')
     parser.add_argument('--pause-monthly', action='store_true',
                         help='暂停每月开荒、侵蚀1和智能调度，并开启敏感任务保护')
     args = parser.parse_args()

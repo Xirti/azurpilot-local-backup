@@ -4,6 +4,7 @@
 
 import { createContext, useCallback, useMemo, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api } from '../api/client'
+import {useLauncherHandoff} from './launcherHandoff'
 import type { Instance, Schema } from '../api/types'
 import { resumeEditors } from '../config/editors'
 import { detectLanguage, isLanguage, languages, localeForLanguage, translateUi, type Language, type UiTranslator } from '../i18n'
@@ -44,6 +45,7 @@ export function AppProvider({children}: {children: ReactNode}) {
   const [instances, setInstances] = useState<Instance[]>([])
   const [instancesLoaded, setInstancesLoaded] = useState(false)
   const [schema, setSchema] = useState<Schema>()
+  useLauncherHandoff(connection, instancesLoaded, Boolean(schema))
   const [previewEnabled, setPreviewEnabled] = useState(false)
   const [devMode, setDevMode] = useState(readDevMode)
   const {theme, palette, colorMode, resolvedMode, customPalettes, compactRailSide, compactRailWidth, material} = useSyncExternalStore(subscribeTheme, getThemePreference, getThemePreference)

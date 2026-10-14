@@ -6,6 +6,7 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,14 @@ class LaunchError(RuntimeError):
     """启动条件不满足或后端明确失败。"""
 
 
+def shutdown_channel(root: Path):
+    # 不导入 runtime 包的日志初始化：统一后端正在捕获结构化进度。
+    spec = importlib.util.spec_from_file_location('launcher_shutdown_channel', root / 'module/runtime/local_webui_stop.py')
+    channel = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(channel)
+    return channel
+
+
 def read_setting(root: Path, name: str, default: str = '') -> str:
     text = (root / 'config/deploy.yaml').read_text(encoding='utf-8-sig')
     values = re.findall(rf'^[\t ]*{re.escape(name)}:[\t ]*([^\r\n#]*)', text, re.MULTILINE)
@@ -33,7 +42,42 @@ def read_setting(root: Path, name: str, default: str = '') -> str:
     return values[0].strip() if values else default
 
 
-def verify_repair(root: Path) -> dict:
+def git_revision(git: str, root: Path, reference: str, cancelled=None, timeout=120) -> str:
+    """冷启动允许慢磁盘，持续报告进度并响应明确中断。"""
+    process = subprocess.Popen(
+        [git, '-C', str(root), 'rev-parse', reference], stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
+    )
+    started = time.monotonic()
+    next_message = started + 10
+    try:
+        while True:
+            if cancelled is not None and cancelled():
+                raise KeyboardInterrupt
+            try:
+                output, errors = process.communicate(timeout=.2)
+                break
+            except subprocess.TimeoutExpired:
+                now = time.monotonic()
+                if now - started >= timeout:
+                    raise LaunchError('Git 版本校验持续无响应，请查看启动日志后重试。')
+                if now >= next_message:
+                    print('[校验] 正在读取固定版本，磁盘响应较慢；可查看启动日志或中断。', flush=True)
+                    next_message = now + 10
+        if process.returncode:
+            raise LaunchError('Git 无法读取固定版本：' + errors.decode('utf-8', errors='replace')[-2000:])
+        revision = output.decode('utf-8').strip()
+        if not re.fullmatch(r'[0-9a-f]{40}', revision):
+            raise LaunchError('Git 返回的固定版本号不正确。')
+        return revision
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+
+
+def verify_repair(root: Path, cancelled=None) -> dict:
     manifest_path = root / 'local-repairs/manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8-sig'))
     if manifest.get('schema_version') != 1:
@@ -42,27 +86,19 @@ def verify_repair(root: Path) -> dict:
     git = str(bundled_git) if bundled_git.is_file() else shutil.which('git')
     if not git:
         raise LaunchError('找不到 Git，无法确认固定版本。')
-    result = subprocess.run(
-        [git, '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True,
-        text=True, encoding='utf-8', timeout=20,
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-    )
+    print('[校验] 正在核对本地版本与修复文件…', flush=True)
+    current_revision = git_revision(git, root, 'HEAD', cancelled)
     expected_revision = manifest['revision']
     if manifest.get('revision_ref'):
         reference = manifest['revision_ref']
         if not re.fullmatch(r'refs/tags/[A-Za-z0-9._/-]+', reference):
             raise LaunchError('固定版本标签格式不正确。')
-        resolved = subprocess.run(
-            [git, '-C', str(root), 'rev-parse', reference + '^{commit}'],
-            capture_output=True, text=True, encoding='utf-8', timeout=20,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-        )
-        if resolved.returncode:
-            raise LaunchError('固定版本标签不存在，请先完成本地版验收。')
-        expected_revision = resolved.stdout.strip()
-    if result.returncode or result.stdout.strip() != expected_revision:
+        expected_revision = git_revision(git, root, reference + '^{commit}', cancelled)
+    if current_revision != expected_revision:
         raise LaunchError('程序版本已经改变，请先按新版核查并恢复修复；此次不启动。')
     for relative, expected in manifest['files'].items():
+        if cancelled is not None and cancelled():
+            raise KeyboardInterrupt
         path = (root / relative).resolve()
         if not path.is_relative_to(root.resolve()):
             raise LaunchError('本地修复记录包含安装目录之外的文件。')
@@ -147,10 +183,12 @@ def startup_lock(root: Path):
                 fcntl.flock(stream, fcntl.LOCK_UN)
 
 
-def wait_for_webui(process, url: str, log_path: Path, poll_seconds: float = 2) -> float:
+def wait_for_webui(process, url: str, log_path: Path, poll_seconds: float = 2, cancelled=None) -> float:
     started = time.monotonic()
     next_message = started
     while True:
+        if cancelled is not None and cancelled():
+            raise KeyboardInterrupt
         code = process.poll()
         if code is not None:
             raise LaunchError(f'后端已退出（退出码 {code}），停止等待。启动日志：{log_path}')
@@ -168,8 +206,40 @@ def wait_for_webui(process, url: str, log_path: Path, poll_seconds: float = 2) -
         time.sleep(poll_seconds)
 
 
-def launch(root: Path, open_browser: bool = True) -> int:
-    manifest = verify_repair(root)
+def stop_owned_start(process, identity, root: Path, stop_event: str):
+    """只清理本次创建且身份仍匹配的启动树；不按进程名关闭其他程序。"""
+    import psutil
+    if process.poll() is not None:
+        return
+    try:
+        owner = psutil.Process(process.pid)
+        if abs(owner.create_time() - identity) >= .01:
+            raise LaunchError('启动进程身份发生变化，拒绝中断未知进程。')
+        targets = []
+        for p in owner.children(recursive=True) + [owner]:
+            try:
+                if (Path(p.exe()).resolve().is_relative_to(root.resolve())
+                        and p.environ().get('AZURPILOT_LOCAL_STOP_EVENT') == stop_event):
+                    targets.append(p)
+            except psutil.NoSuchProcess:
+                pass
+        shutdown_channel(root).signal_shutdown(stop_event)
+        _, alive = psutil.wait_procs(targets, timeout=5)
+        for p in alive:
+            p.terminate()
+        _, alive = psutil.wait_procs(alive, timeout=5)
+        for p in alive:
+            p.kill()
+        psutil.wait_procs(alive, timeout=5)
+    except psutil.NoSuchProcess:
+        pass
+    process.wait(timeout=15)
+
+
+def launch(root: Path, open_browser: bool = True, cancelled=None, on_created=None) -> int:
+    if cancelled is not None and cancelled():
+        raise KeyboardInterrupt
+    manifest = verify_repair(root, cancelled)
     port = int(read_setting(root, 'WebuiPort', '25548'))
     if not 1 <= port <= 65535:
         raise LaunchError('WebuiPort 超出有效范围。')
@@ -178,6 +248,8 @@ def launch(root: Path, open_browser: bool = True) -> int:
     if not python.is_file() or not (root / 'gui.py').is_file():
         raise LaunchError('现有 Python 环境或 gui.py 缺失，不会自动删除或重建环境。')
     with startup_lock(root):
+        if cancelled is not None and cancelled():
+            raise KeyboardInterrupt
         if probe_webui(url) == 'ready':
             print(f'[启动] 已有 WebUI 可用，复用现有服务：{url}', flush=True)
             print('[启动] 如刚修改源码，请先退出已有 WebUI，再重新启动以加载修复。', flush=True)
@@ -190,6 +262,13 @@ def launch(root: Path, open_browser: bool = True) -> int:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
         stop_event = 'Local\\AzurPilot-WebUI-' + uuid4().hex
+        # 预先持有事件，初始化尚未开始时也能收到本次启动的取消通知。
+        event_kernel = event_handle = None
+        if sys.platform == 'win32':
+            event_kernel = shutdown_channel(root).windows_events()
+            event_handle = event_kernel.CreateEventW(None, False, False, stop_event)
+            if not event_handle:
+                raise LaunchError('无法创建本次启动的关闭通道。')
         environment = dict(os.environ, AZURPILOT_LOCAL_STOP_EVENT=stop_event)
         if manifest.get('local_only'):
             guard = root / 'local-maintenance/offline-runtime'
@@ -201,25 +280,32 @@ def launch(root: Path, open_browser: bool = True) -> int:
                 if key.upper() in {'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'}:
                     environment.pop(key)
             environment['NO_PROXY'] = 'localhost,127.0.0.1,::1'
-        with log_path.open('wb') as output:
-            process = subprocess.Popen(
-                [str(python), '-X', 'utf8', 'gui.py'], cwd=root,
-                stdout=output, stderr=subprocess.STDOUT, creationflags=flags, env=environment,
-            )
+        try:
+            with log_path.open('wb') as output:
+                process = subprocess.Popen(
+                    [str(python), '-X', 'utf8', 'gui.py'], cwd=root,
+                    stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, creationflags=flags, env=environment,
+                )
+        except BaseException:
+            if event_handle:
+                event_kernel.CloseHandle(event_handle)
+            raise
+        import psutil
+        identity = psutil.Process(process.pid).create_time()
         verified_revision = manifest.get('verified_revision', manifest['revision'])
         print(f'[启动] 固定版本 {verified_revision[:9]}，修复完整；开始启动 WebUI。', flush=True)
         try:
-            elapsed = wait_for_webui(process, url, log_path)
+            if on_created is not None:
+                on_created(process, identity, stop_event)
+            elapsed = wait_for_webui(process, url, log_path, cancelled=cancelled)
+            if cancelled is not None and cancelled():
+                raise KeyboardInterrupt
         except BaseException:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+            stop_owned_start(process, identity, root, stop_event)
             raise
-        import psutil
+        finally:
+            if event_handle:
+                event_kernel.CloseHandle(event_handle)
         receipt = dict(revision=verified_revision, pid=process.pid, url=url,
                        created_at=psutil.Process(process.pid).create_time(), stop_event=stop_event,
                        elapsed_seconds=round(elapsed, 2), log=str(log_path))

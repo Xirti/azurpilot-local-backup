@@ -5,6 +5,7 @@
 """
 from module.base.runtime_params import UPDATE_RESTART_TTL
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Iterable
@@ -92,6 +93,9 @@ def startup_runs(configured: Iterable[str], update_restart: bool = False) -> lis
     Returns:
         list[str]: 经去重计算后最终应启动的实例名称列表。
     """
+    # 本地入口的“仅启动 WebUI”不能被记忆运行绕过；用户任务由网页显式开启。
+    if os.environ.get('AZURPILOT_LOCAL_MODE') == '1':
+        return []
     data = _read()
     configured = list(configured)
     if not update_restart:
