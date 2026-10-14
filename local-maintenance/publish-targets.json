@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "purpose": "只备份运行、恢复与维护所需目标；排除项不得进入任何已推送提交",
+  "tracked_directories": [
+    "assets",
+    "bin",
+    "campaign",
+    "deploy",
+    "licenses",
+    "module",
+    "submodule"
+  ],
+  "root_files": [
+    ".gitattributes",
+    ".gitignore",
+    "LICENSE",
+    "README.md",
+    "alas.py",
+    "gui.py",
+    "tui.py",
+    "mcp_server_sse.py",
+    "pyproject.toml",
+    "uv.lock",
+    "AzurPilot-Local.exe"
+  ],
+  "frontend_directories": [
+    "frontend/src",
+    "frontend/public",
+    "frontend/dist"
+  ],
+  "frontend_files": [
+    "frontend/package.json",
+    "frontend/package-lock.json",
+    "frontend/index.html",
+    "frontend/vite.config.ts",
+    "frontend/tsconfig.json"
+  ],
+  "maintenance_directories": [
+    "local-maintenance",
+    "local-repairs",
+    "local-launcher"
+  ],
+  "configuration_allowlist": [
+    "config/template*.json",
+    "config/deploy.template*.yaml",
+    "config/webui_bg.css"
+  ],
+  "excluded_components": [
+    "test",
+    "tests",
+    "__tests__",
+    "mock",
+    "e2e",
+    "fixtures",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "cache",
+    "log",
+    "screenshots",
+    "python-runtime",
+    "private",
+    "offline-artifacts"
+  ],
+  "excluded_file_patterns": [
+    "test_*.py",
+    "*_test.py",
+    "conftest.py",
+    "*.test.*",
+    "*.spec.*",
+    "playwright*.config.*",
+    "vitest.config.*",
+    "*.pyc",
+    "*.pem",
+    "*.key",
+    "*.bak"
+  ],
+  "excluded_maintenance_files": [
+    "local-maintenance/runtime.json",
+    "local-maintenance/validation-private.json",
+    "local-launcher/ui/assets/sakura-op.mp4"
+  ],
+  "note": "生产页面中实际导入的预览组件及其生产chunk属于运行产物；测试目录、mock服务器与检查脚本不属于运行产物。私人配置、数据库、日志、运行环境和临时验证工具另存本机。"
+}

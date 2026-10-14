@@ -1,0 +1,16 @@
+{
+  "upstream_url": "https://github.com/wess09/AzurPilot",
+  "upstream_revision": "c50cd8bac775bfbcb7bde95133b81afcf02a8a99",
+  "snapshot_client_date": "2026-10-10",
+  "license": "GPL-3.0",
+  "source_files_copied": 11962,
+  "live_source_modified_by_snapshot": false,
+  "live_configuration_changes_this_round": [
+    "EnableRemoteAccess=false"
+  ],
+  "published_target_files_initial_snapshot": 11657,
+  "published_tests_or_investigation_scripts": false,
+  "upstream_branch": "master",
+  "updated_at": "2026-10-14T05:50:28+00:00",
+  "update_engine_version": 1
+}

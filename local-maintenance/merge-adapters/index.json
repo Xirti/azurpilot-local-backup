@@ -1,0 +1,38 @@
+{
+  ".gitignore": {
+    "inputs": [
+      "5a30a7302784754d78dda646dd5e1b2b146bb115d8f7de580b55c955eb856e19",
+      "2e139cc54e76e4d1ccfc0b6816061f6d97b17b7f55ae907c16b06be954cd46fd",
+      "1fe06b9d5b78c05845183192163847f80cb56dd12811ece8e9970637c759df88"
+    ],
+    "output": "bc37d034bad5.txt",
+    "sha256": "05977d036349ba126beda4df4c1a982f2df5ad02727bea72e61ca19f0e99eee4"
+  },
+  "module/api/app.py": {
+    "inputs": [
+      "37864d548629969553eddc998246aedefb033d03bc6c11ca63c59d383e208455",
+      "2fce8dfa663f0329432eea9fadaa73b309f5f129a4c86c02c3bbd46c42a8a077",
+      "1fc7549479986fa10c7d610f545a6cb03ac40b8522a8aa0847d19b02cecc3ea4"
+    ],
+    "output": "bbe690755081.txt",
+    "sha256": "9c029bff557ea879edcfe75dfd8c3b5af87672c67409483cced00e632c1de2ec"
+  },
+  "module/api/protocol.py": {
+    "inputs": [
+      "2d91264e09db2c5556e27cb32d4a24ce75383e569c391243ba07c50e2f9c835d",
+      "0c6626b605cab173c46afca328ae9ae9596358ce872d53cd64f94f3e47e7c31a",
+      "20c1774285435514802288cbc503c1f06a04db4ed6e90dba63ae906f8f574ddd"
+    ],
+    "output": "bc4c77a683a9.txt",
+    "sha256": "f44350d5032deb77b2a567ab31a698b220b04a1f9927fbdc4aeaf92df6f382e8"
+  },
+  "module/api/router.py": {
+    "inputs": [
+      "ec2bc83607b55a6b053d3bb83315f36435bdd33a91bc559cc15283aed0117fdd",
+      "3907068b10312066d071928d6b76fa6d2511f48ed75848ba7bbf4c3d446713f5",
+      "63c0fe13dc9d1056a066e08ea5d8da8127fde255a89c921ce4caedbd5f81751b"
+    ],
+    "output": "1bcf116c5c19.txt",
+    "sha256": "695d657eb981cb83bafc8facf1f172c42582eb74f20c97a54962373e4f30453c"
+  }
+}

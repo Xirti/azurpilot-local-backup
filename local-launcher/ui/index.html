@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self' https://azurpilot-fonts.local; img-src 'self'; media-src 'self' https://azurpilot-media.local; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'">
+<title>AzurPilot · 本地版</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="scene"><img class="poster" src="assets/poster.jpg" alt=""><video id="video" src="https://azurpilot-media.local/background.mp4" autoplay loop muted playsinline preload="auto"></video><div class="veil"></div></div>
+<button id="exit" class="power" title="终止本次启动并退出" aria-label="终止本次启动并退出"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3v12M9 6a12 12 0 1 0 14 0"/></svg></button>
+<main id="home" class="home">
+<img class="brand-mark" src="assets/brand-full.svg" alt="AzurPilot" draggable="false">
+<nav id="launch-actions" class="launch-actions" aria-label="启动菜单"><button id="start" class="menu-button primary"><span>启动</span></button><button id="more" class="menu-button"><span>更多选项</span></button></nav>
+<section id="mode-choice" class="mode-choice" aria-label="启动方式" hidden><div class="mode-row"><button id="start-browser" class="menu-button"><span>网页端启动</span></button><button id="start-desktop" class="menu-button"><span>桌面端启动</span></button></div><button id="mode-back" class="mode-back">返回</button></section>
+<div class="brand"><div class="brand-star" aria-hidden="true">✧</div><h1>Azur<span>Pilot</span></h1><div class="edition">LOCAL EDITION <i></i> <span id="version">本地版</span></div></div>
+</main>
+<section id="progress" class="progress hidden" aria-live="polite"><p id="progress-title">正在启动</p><p id="progress-message" class="loading-tip">指挥官，今天也要加油哦！</p><p id="progress-stage"></p><div class="progress-line" aria-hidden="true"></div><div class="progress-actions"><button id="diagnostics-open" class="text-button">查看启动日志</button><button id="return" class="text-button hidden">返回</button></div></section>
+<div id="overlay" class="overlay" aria-hidden="true"><section class="options" role="dialog" aria-modal="true" aria-labelledby="options-title">
+<header><div><span class="eyebrow">LOCAL OPTIONS</span><h2 id="options-title">更多选项</h2></div><button id="close-options" class="close" aria-label="关闭更多选项">×</button></header>
+<nav class="tabs" aria-label="选项分类"><button data-tab="appearance" aria-selected="true">本地设置</button><button data-tab="maintain" aria-selected="false">恢复与检查</button><button data-tab="update" aria-selected="false">版本更新</button></nav>
+<div class="panels">
+<section data-panel="appearance"><label class="row"><span>维护实例</span><select id="config"><option value="">尚未创建实例</option></select></label><label class="row"><span>视频显示</span><select id="fit"><option value="cover">填满画面</option><option value="contain">完整画面</option></select></label><label class="row"><span>视频声音</span><input id="sound" type="checkbox"></label><label class="row"><span>音量</span><input id="volume" type="range" min="0" max="100" value="25"></label><p class="note">游戏任务由你在控制台中开启。</p></section>
+<section data-panel="maintain" hidden><div class="tool-grid"><button data-action="check"><strong>检查状态</strong><span>核对版本、补丁与本地设置</span></button><button data-action="backup"><strong>备份配置与数据</strong><span>保存当前实例与业务记录</span></button><button data-action="restore"><strong>恢复本地设置</strong><span>先备份，再恢复已确认的设置</span></button><button data-action="initialize"><strong>初始化离线包</strong><span>移动或首次解压后整理环境</span></button></div><button id="diagnostics-maintain" class="text-button">启动诊断</button></section>
+<section data-panel="update" hidden>
+<div class="update-version"><span>当前版本</span><code id="update-current">读取中</code></div>
+<div class="update-version"><span>上游版本</span><code id="update-latest">未检查</code></div>
+<p id="update-summary" class="note update-summary">检查上游变更后，准备并验证新版。</p>
+<div class="update-actions"><button class="candidate-main" data-action="check-update">检查更新</button><button class="candidate-main" data-action="update" disabled>更新并重启</button></div>
+<details class="update-history"><summary>版本回退</summary><p class="note">使用上一版本及其保留的数据。</p><button data-action="rollback" class="text-button" disabled>回到上一版本</button></details>
+<details class="manual-update"><summary>手动维护</summary><label class="field"><span>候选目录</span><div class="input-group"><input id="candidate" placeholder="请选择独立目录"><button id="browse">选择</button></div></label><label class="field"><span>官方版本</span><input id="reference" placeholder="分支、标签或提交号"></label><div class="compact-tools"><button data-action="prepare-candidate">获取候选源码</button><button data-action="patch">应用本地补丁</button><button data-action="rebuild-runtime">准备运行环境</button><button data-action="rebuild-frontend">重建前端</button></div></details>
+</section>
+</div>
+<div id="confirm" class="confirmation" hidden><p id="confirm-message"></p><div><button id="confirm-cancel">取消</button><button id="confirm-ok">继续</button></div></div>
+<footer id="options-status" aria-live="polite"></footer>
+</section></div>
+<div id="toast" class="toast" role="status"></div>
+<dialog id="diagnostics-dialog" class="diagnostics"><header><h2>启动日志</h2><button id="diagnostics-close" class="close" aria-label="关闭启动日志">×</button></header><p id="diagnostics-summary">正在读取本次启动记录…</p><pre id="diagnostics-output" tabindex="0"></pre><footer><span id="diagnostics-status">仅在本机读取</span><button id="diagnostics-save" class="text-button">保存日志</button></footer></dialog>
+<script src="app.js"></script><script src="diagnostics.js"></script></body></html>
